@@ -62,8 +62,11 @@
     if (table === "pages") row = { ...row, updated_at: now };
     if (remote) {
       const clean = { ...row };
-      if (!clean.id) delete clean.id;
-      const { data, error } = await sb.from(table).upsert(clean).select().single();
+      // Editar usa UPDATE (no upsert): el upsert también valida la política de INSERT y rechazaría, por ejemplo, cambiar el estado de una solicitud.
+      let q;
+      if (clean.id) { const id = clean.id; delete clean.id; delete clean.created_at; q = sb.from(table).update(clean).eq("id", id); }
+      else { delete clean.id; q = sb.from(table).insert(clean); }
+      const { data, error } = await q.select().single();
       fail(error, error && /duplicate|unique/i.test(error.message) ? "Ya existe un registro con ese identificador." : "No se pudo guardar. Revisa tus permisos.");
       return data;
     }

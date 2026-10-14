@@ -366,11 +366,14 @@
   };
 
   sections.solicitudes = () => {
-    const root = h("div"); let rows = [];
+    const root = h("div"); let rows = [], filter = "all"; const sel = new Set();
     const ST = { new: "Nueva", contacted: "Contactada", enrolled: "Inscrita", discarded: "Descartada" };
-    async function load() { try { rows = await D.list("enrollments"); } catch (e) { fail(e); } draw(); }
+    async function load() { try { rows = await D.list("enrollments"); } catch (e) { fail(e); } for (const id of [...sel]) if (!rows.some(r => r.id === id)) sel.delete(id); draw(); }
+    const shown = () => (filter === "all" ? rows : rows.filter(r => r.status === filter));
+    // Sin selección se exportan todas las solicitudes existentes; con selección, solo las marcadas.
+    const target = () => (sel.size ? rows.filter(r => sel.has(r.id)) : rows);
     const HEAD = ["Fecha", "Nombre(s) jugadora", "Apellido paterno", "Apellido materno", "Edad", "Categoría", "Nombre(s) tutor", "Apellido paterno tutor", "Apellido materno tutor", "Teléfono", "Estado"];
-    const table = () => rows.map(r => [fmtDate(r.created_at), r.player_first || r.player_name, r.player_paternal, r.player_maternal, r.age, r.category, r.guardian_first || r.guardian, r.guardian_paternal, r.guardian_maternal, r.phone, ST[r.status]].map(v => v ?? ""));
+    const table = () => target().map(r => [fmtDate(r.created_at), r.player_first || r.player_name, r.player_paternal, r.player_maternal, r.age, r.category, r.guardian_first || r.guardian, r.guardian_paternal, r.guardian_maternal, r.phone, ST[r.status]].map(v => v ?? ""));
     const stamp = () => new Date().toISOString().slice(0, 10);
     function save(blob, name) { const a = h("a", { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove(); }
     function csv() {
@@ -389,15 +392,27 @@
       XLSX.writeFile(wb, `solicitudes-academia-${stamp()}.xlsx`);
     }
     function draw() {
-      root.replaceChildren(...[rows.length && canAdmin() ? h("div", { class: "bar" }, h("button", { class: "btn", onclick: xlsx }, "Exportar Excel (.xlsx)"), h("button", { class: "btn", onclick: csv }, "Exportar CSV"), h("span", { class: "help" }, `${rows.length} solicitud${rows.length === 1 ? "" : "es"}`)) : null,
-        rows.length ? h("div", { class: "list" }, rows.map(r => h("div", { class: "row" },
+      const list = shown(), n = target().length;
+      const allOn = list.length > 0 && list.every(r => sel.has(r.id));
+      const what = sel.size ? `${n} seleccionada${n === 1 ? "" : "s"}` : `todas (${n})`;
+      root.replaceChildren(...[rows.length && canAdmin() ? h("div", { class: "panel", style: "border-top-width:1px;gap:12px" },
+        h("div", { class: "bar", style: "margin:0" },
+          h("label", { class: "f f--check" }, h("input", { type: "checkbox", checked: allOn, onchange: e => { list.forEach(r => (e.target.checked ? sel.add(r.id) : sel.delete(r.id))); draw(); } }), "Seleccionar todas las que se ven"),
+          h("select", { class: "inp", style: "width:auto", "aria-label": "Filtrar por estado", onchange: e => { filter = e.target.value; draw(); } },
+            h("option", { value: "all", selected: filter === "all" }, "Todos los estados"), Object.entries(ST).map(([v, l]) => h("option", { value: v, selected: filter === v }, l))),
+          sel.size ? h("button", { class: "btn btn--sm", onclick: () => { sel.clear(); draw(); } }, "Quitar selección") : null),
+        h("div", { class: "bar", style: "margin:0" },
+          h("button", { class: "btn btn--gold", onclick: xlsx }, "Exportar Excel (.xlsx)"), h("button", { class: "btn", onclick: csv }, "Exportar CSV"),
+          h("span", { class: "help" }, `Se exportarán: ${what}. ${sel.size ? "" : "Marca casillas para elegir solo algunas."}`))) : null,
+        rows.length ? h("div", { class: "list" }, list.length ? list.map(r => h("div", { class: "row row--sel" },
+          canAdmin() ? h("input", { type: "checkbox", checked: sel.has(r.id), "aria-label": "Seleccionar " + r.player_name, style: "width:18px;height:18px;accent-color:var(--gold)", onchange: e => { e.target.checked ? sel.add(r.id) : sel.delete(r.id); draw(); } }) : h("span"),
           h("div", { class: "thumb" }, (r.player_name || "?").charAt(0)),
           h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, r.player_name, h("span", { class: "tag" }, `${r.age} años · ${r.category || "sin categoría"}`)),
             h("div", { class: "row__s" }, `Tutor: ${r.guardian} · `, h("a", { href: "tel:" + String(r.phone).replace(/[^\d+]/g, "") }, r.phone), ` · ${fmtDate(r.created_at)}`)),
           h("div", { class: "row__a" },
             h("select", { class: "inp", style: "width:auto", disabled: !canEdit(), "aria-label": "Estado", onchange: async e => { try { await D.save("enrollments", { ...r, status: e.target.value }); toast("Estado actualizado."); } catch (x) { fail(x); } load(); } },
               Object.entries(ST).map(([v, l]) => h("option", { value: v, selected: r.status === v }, l))),
-            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar esta solicitud?")) return; try { await D.remove("enrollments", r.id); } catch (x) { fail(x); } load(); } }, "Eliminar") : null))))
+            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar esta solicitud?")) return; try { await D.remove("enrollments", r.id); } catch (x) { fail(x); } load(); } }, "Eliminar") : null))) : h("p", { class: "empty" }, "Ninguna solicitud con ese estado."))
           : h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay solicitudes de clase de prueba."))].filter(Boolean));
     }
     load();
