@@ -30,3 +30,11 @@ Con `config.js` vacío todo funciona con datos guardados solo en el navegador:
 | Administrador | Publicar, editar y eliminar |
 | Editor | Publicar y editar |
 | Consulta | Solo ver el panel |
+
+## Cuentas del equipo (solo superadministrador)
+El módulo **Cuentas y permisos** crea usuarios con una contraseña temporal; en su primer ingreso la persona debe elegir su propia contraseña (mientras no lo haga, la base de datos la trata como cuenta sin permisos).
+
+Requiere una Edge Function (una sola vez):
+1. Aplicar `supabase/schema.sql` (o, si ya estaba aplicado, `supabase/migracion-cuentas.sql`).
+2. Supabase → Edge Functions → *Deploy a new function* → nombre `admin-users` → pegar `supabase/functions/admin-users/index.ts` → Deploy.
+La clave de servicio la inyecta Supabase en la función; nunca va en el navegador ni en este repositorio.

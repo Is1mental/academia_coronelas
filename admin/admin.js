@@ -419,20 +419,110 @@
     return root;
   };
 
+  // Contraseña temporal legible (sin caracteres ambiguos) con al menos una letra y un número.
+  function tempPassword() {
+    const L = "abcdefghjkmnpqrstuvwxyz", U = "ABCDEFGHJKLMNPQRSTUVWXYZ", N = "23456789", all = L + U + N;
+    const pick = set => set[crypto.getRandomValues(new Uint32Array(1))[0] % set.length];
+    const chars = [pick(U), pick(L), pick(N), pick(N)];
+    while (chars.length < 10) chars.push(pick(all));
+    for (let i = chars.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+    return chars.join("");
+  }
+
   sections.cuentas = () => {
     const root = h("div");
-    D.auth.accounts().then(list => {
-      root.append(h("div", { class: "notice" }, "Las cuentas nuevas quedan pendientes y no ven contenido interno hasta que les asignes un permiso."),
-        h("div", { class: "list" }, list.map(a => h("div", { class: "row" },
-          h("div", { class: "thumb" }, (a.email || "?").charAt(0).toUpperCase()),
-          h("div", { class: "row__t" }, a.email),
-          a.role === "super_admin" ? h("span", { class: "tag tag--gold" }, "Superadministrador") :
-            h("select", { class: "inp", style: "width:auto", "aria-label": "Permiso de " + a.email, onchange: async e => { try { await D.auth.setRole(a.id, e.target.value); toast("Permiso actualizado."); } catch (x) { fail(x); } } },
-              [["pending", "Pendiente"], ["admin", "Administrador"], ["editor", "Editor"], ["viewer", "Consulta"]].map(([v, l]) => h("option", { value: v, selected: a.role === v }, l)))))),
-        h("div", { class: "grid g3", style: "margin-top:16px" }, [["Administrador", "Publica, edita y elimina contenido."], ["Editor", "Publica y edita, sin eliminar."], ["Consulta", "Revisa el panel sin hacer cambios."]].map(([t, d]) => h("div", { class: "stat" }, h("b", { style: "font-size:1.6rem;color:var(--fg)" }, t), h("span", { style: "text-transform:none;letter-spacing:0;font-weight:400" }, d)))));
-    }).catch(e => root.append(h("p", { class: "notice" }, e.message)));
+    if (!isSuper()) return h("div", { class: "notice" }, "Solo el superadministrador puede ver este módulo.");
+    const ROLES = [["admin", "Administrador"], ["editor", "Editor"], ["viewer", "Consulta"]];
+    const siteUrl = () => location.origin + location.pathname;
+    let card = null; // tarjeta de acceso recién generada (se muestra una sola vez)
+
+    function accessCard(email, password, title) {
+      const text = `Acceso al panel de Academia Elite\nDirección: ${siteUrl()}\nUsuario: ${email}\nContraseña temporal: ${password}\n\nAl entrar por primera vez se te pedirá crear tu propia contraseña.`;
+      return h("div", { class: "panel", style: "border-top-color:var(--ok)" },
+        h("h3", {}, title),
+        h("p", { class: "help" }, "Esta contraseña se muestra solo ahora. Cópiala y entrégala por un medio privado; la persona deberá cambiarla al entrar."),
+        h("pre", { style: "background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:14px;white-space:pre-wrap;user-select:all;font:inherit" }, text),
+        h("div", { class: "bar", style: "margin:0" },
+          h("button", { class: "btn btn--gold", onclick: async () => { try { await navigator.clipboard.writeText(text); toast("Acceso copiado."); } catch { toast("No se pudo copiar; selecciona el texto manualmente.", true); } } }, "Copiar acceso"),
+          h("button", { class: "btn", onclick: () => { card = null; draw(); } }, "Cerrar")));
+    }
+
+    function createForm() {
+      const email = h("input", { type: "email", maxlength: 160, placeholder: "persona@correo.com", autocomplete: "off" });
+      const pass = h("input", { type: "text", maxlength: 72, value: tempPassword(), autocomplete: "off", spellcheck: "false" });
+      const role = h("select", {}, ROLES.map(([v, l], i) => h("option", { value: v, selected: i === 1 }, l)));
+      const err = h("p", { class: "help", style: "color:var(--red)" });
+      const submit = h("button", { class: "btn btn--gold" }, "Crear usuario");
+      return h("form", { class: "panel", novalidate: true, onsubmit: async e => {
+        e.preventDefault(); err.textContent = "";
+        const em = email.value.trim().toLowerCase(), pw = pass.value;
+        if (!/^\S+@\S+\.\S+$/.test(em)) return (err.textContent = "Escribe un correo válido.");
+        if (pw.length < 8) return (err.textContent = "La contraseña temporal debe tener al menos 8 caracteres.");
+        submit.disabled = true;
+        try { await D.auth.manage({ action: "create", email: em, password: pw, role: role.value }); card = accessCard(em, pw, "Usuario creado"); toast("Usuario creado."); await load(); }
+        catch (x) { err.textContent = x.message; submit.disabled = false; }
+      } },
+        h("h3", {}, "Crear usuario"),
+        h("p", { class: "help" }, "Crea la cuenta con una contraseña temporal. En su primer ingreso, la persona deberá elegir su propia contraseña."),
+        h("div", { class: "grid g2" }, f("Correo (será su usuario)", email), f("Permiso", role)),
+        f("Contraseña temporal", h("div", { class: "bar", style: "margin:0;flex-wrap:nowrap" }, pass, h("button", { type: "button", class: "btn", style: "white-space:nowrap", onclick: () => (pass.value = tempPassword()) }, "Generar otra")), "Mínimo 8 caracteres. Se genera una segura por defecto."),
+        err, h("div", { class: "bar", style: "margin:0" }, submit));
+    }
+
+    let list = [];
+    async function load() { try { list = await D.auth.accounts(); } catch (e) { fail(e); } draw(); }
+
+    function draw() {
+      root.replaceChildren(...[
+        card, createForm(),
+        h("div", { class: "list" }, list.length ? list.map(a => {
+          const me = S.user && a.id === S.user.id, prot = a.role === "super_admin";
+          return h("div", { class: "row" },
+            h("div", { class: "thumb" }, (a.email || "?").charAt(0).toUpperCase()),
+            h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, a.email, a.must_change ? h("span", { class: "tag tag--gold" }, "debe cambiar contraseña") : null, me ? h("span", { class: "tag" }, "tú") : null)),
+            prot ? h("span", { class: "tag tag--gold" }, "Superadministrador") : h("div", { class: "row__a" },
+              h("select", { class: "inp", style: "width:auto", "aria-label": "Permiso de " + a.email, onchange: async e => { try { await D.auth.setRole(a.id, e.target.value); toast("Permiso actualizado."); } catch (x) { fail(x); } load(); } },
+                [["pending", "Pendiente"], ...ROLES].map(([v, l]) => h("option", { value: v, selected: a.role === v }, l))),
+              h("button", { class: "btn btn--sm", onclick: async () => {
+                if (!confirm(`¿Restablecer la contraseña de ${a.email}? Se generará una temporal y deberá cambiarla al entrar.`)) return;
+                const pw = tempPassword();
+                try { await D.auth.manage({ action: "reset", userId: a.id, password: pw }); card = accessCard(a.email, pw, "Contraseña restablecida"); toast("Contraseña restablecida."); } catch (x) { fail(x); }
+                load();
+              } }, "Restablecer contraseña"),
+              h("button", { class: "btn btn--sm btn--danger", onclick: async () => {
+                if (!confirm(`¿Eliminar la cuenta ${a.email}? Esta acción no se puede deshacer.`)) return;
+                try { await D.auth.manage({ action: "delete", userId: a.id }); toast("Cuenta eliminada."); } catch (x) { fail(x); }
+                load();
+              } }, "Eliminar")));
+        }) : h("p", { class: "empty" }, "Cargando cuentas…")),
+        h("div", { class: "grid g3", style: "margin-top:16px" }, [["Administrador", "Publica, edita y elimina contenido."], ["Editor", "Publica y edita, sin eliminar."], ["Consulta", "Revisa el panel sin hacer cambios."]].map(([t, d]) => h("div", { class: "stat" }, h("b", { style: "font-size:1.6rem;color:var(--fg)" }, t), h("span", { style: "text-transform:none;letter-spacing:0;font-weight:400" }, d))))
+      ].filter(Boolean));
+    }
+    draw(); load();
     return root;
   };
+
+  // Primer ingreso con contraseña temporal: obliga a crear una propia antes de usar el panel.
+  function changePasswordView() {
+    const p1 = h("input", { type: "password", autocomplete: "new-password", minlength: 8, maxlength: 72 });
+    const p2 = h("input", { type: "password", autocomplete: "new-password", minlength: 8, maxlength: 72 });
+    const err = h("p", { class: "help", style: "color:var(--red);min-height:1.2em" });
+    const submit = h("button", { class: "btn btn--gold", style: "width:100%" }, "Guardar contraseña y entrar");
+    app.replaceChildren(h("div", { class: "login" }, h("form", { class: "login__box", novalidate: true, onsubmit: async e => {
+      e.preventDefault(); err.textContent = "";
+      if (p1.value.length < 8) return (err.textContent = "La contraseña debe tener al menos 8 caracteres.");
+      if (!/[A-Za-z]/.test(p1.value) || !/\d/.test(p1.value)) return (err.textContent = "Incluye al menos una letra y un número.");
+      if (p1.value !== p2.value) return (err.textContent = "Las contraseñas no coinciden.");
+      submit.disabled = true;
+      try { await D.auth.changePassword(p1.value); toast("Contraseña actualizada."); start(); }
+      catch (x) { err.textContent = x.message; submit.disabled = false; }
+    } },
+      h("div", { class: "login__brand" }, h("img", { src: "../assets/escudo.webp", alt: "" }), h("div", {}, h("b", {}, "CORONELAS"), h("small", {}, "Academia Elite"))),
+      h("h1", {}, "Crea tu contraseña"),
+      h("p", { class: "help" }, "Entraste con una contraseña temporal. Elige una propia para continuar: mínimo 8 caracteres, con letras y números."),
+      f("Nueva contraseña", p1), f("Repite la contraseña", p2), err, submit,
+      h("button", { type: "button", class: "btn", style: "width:100%", onclick: async () => { await D.auth.signOut(); start(); } }, "Salir"))));
+  }
 
   const NAV = [["resumen", "Resumen"], ["general", "Información general"], ["redes", "Redes sociales"], ["imagenes", "Imágenes de portada"], ["categorias", "Categorías"], ["horarios", "Horarios"], ["entrenadores", "Entrenadores"], ["galeria", "Galería de fotos"], ["paginas", "Páginas"], ["faq", "Preguntas frecuentes"], ["solicitudes", "Solicitudes"], ["cuentas", "Cuentas y permisos"]];
 
@@ -441,10 +531,11 @@
 
   function shell() {
     const nav = NAV.filter(([k]) => k !== "cuentas" || isSuper());
+    if (S.tab === "cuentas" && !isSuper()) S.tab = "resumen";
     const title = (NAV.find(n => n[0] === S.tab) || NAV[0])[1];
     const note = S.role === "pending" ? "Tu cuenta está pendiente de aprobación. El superadministrador debe asignarte un permiso para ver el contenido interno."
       : !canEdit() ? "Tu cuenta tiene acceso de consulta. Un administrador debe asignarte permisos de edición." : "";
-    app.replaceChildren(
+    app.replaceChildren(...[
       D.auth.demo ? h("div", { class: "demo" }, "Modo demostración: los datos se guardan solo en este navegador. Conecta Supabase en config.js para publicarlos de verdad.") : null,
       h("header", { class: "top" }, h("div", { class: "top__in" },
         h("div", { class: "top__brand" }, h("img", { src: "../assets/escudo.webp", alt: "" }), h("div", {}, h("p", {}, "Academia Elite"), h("h1", {}, "Administración"))),
@@ -454,7 +545,7 @@
         h("nav", { class: "side", "aria-label": "Secciones" }, nav.map(([k, l]) => h("button", { "aria-current": S.tab === k ? "true" : "false", onclick: () => go(k) }, l))),
         h("main", { class: "main" }, h("p", { class: "role" }, "Rol: " + (ROLE_LABEL[S.role] || S.role)), h("h2", {}, title),
           note ? h("div", { class: "notice" }, note) : null,
-          S.role === "pending" ? null : (sections[S.tab] || sections.resumen)())));
+          S.role === "pending" ? null : (sections[S.tab] || sections.resumen)()))].filter(Boolean));
   }
 
   function loginView() {
@@ -485,7 +576,9 @@
     try {
       S.user = await D.auth.user();
       if (!S.user) return loginView();
-      S.role = await D.auth.role();
+      const st = await D.auth.status();
+      S.role = st.role;
+      if (st.mustChange) return changePasswordView();
       shell();
     } catch (e) { loginView(); fail(e); }
   }

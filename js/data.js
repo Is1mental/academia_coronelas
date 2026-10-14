@@ -139,6 +139,32 @@
       const { data } = await sb.from("user_roles").select("role").eq("user_id", u.id).maybeSingle();
       return data ? data.role : "pending";
     },
+    // Estado de la cuenta: permiso y si debe cambiar la contraseña temporal antes de usar el panel.
+    async status() {
+      if (!remote) return { role: "super_admin", mustChange: false };
+      const u = await auth.user();
+      if (!u) return { role: "none", mustChange: false };
+      const { data } = await sb.from("user_roles").select("role, must_change_password").eq("user_id", u.id).maybeSingle();
+      return data ? { role: data.role, mustChange: !!data.must_change_password } : { role: "pending", mustChange: false };
+    },
+    async changePassword(newPassword) {
+      if (!remote) return;
+      const { error } = await sb.auth.updateUser({ password: newPassword });
+      fail(error, /different/i.test(error && error.message) ? "La nueva contraseña debe ser distinta de la temporal." : "No se pudo cambiar la contraseña.");
+      const r = await sb.rpc("mark_password_changed");
+      fail(r.error, "La contraseña cambió, pero no se pudo completar el acceso. Cierra sesión y vuelve a entrar.");
+    },
+    // Gestión de cuentas (Edge Function admin-users, solo superadministrador).
+    async manage(payload) {
+      if (!remote) return { ok: true };
+      const { data, error } = await sb.functions.invoke("admin-users", { body: payload });
+      if (error) {
+        let msg = "No se pudo completar la operación.";
+        try { const b = await error.context.json(); if (b && b.error) msg = b.error; } catch {}
+        throw new Error(msg);
+      }
+      return data;
+    },
     async signIn(email, password) {
       if (!remote) { lsSet("demo-user", { id: "demo", email }); return; }
       const { error } = await sb.auth.signInWithPassword({ email, password });
