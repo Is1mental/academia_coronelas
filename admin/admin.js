@@ -369,13 +369,27 @@
     const root = h("div"); let rows = [];
     const ST = { new: "Nueva", contacted: "Contactada", enrolled: "Inscrita", discarded: "Descartada" };
     async function load() { try { rows = await D.list("enrollments"); } catch (e) { fail(e); } draw(); }
+    const HEAD = ["Fecha", "Nombre(s) jugadora", "Apellido paterno", "Apellido materno", "Edad", "Categoría", "Nombre(s) tutor", "Apellido paterno tutor", "Apellido materno tutor", "Teléfono", "Estado"];
+    const table = () => rows.map(r => [fmtDate(r.created_at), r.player_first || r.player_name, r.player_paternal, r.player_maternal, r.age, r.category, r.guardian_first || r.guardian, r.guardian_paternal, r.guardian_maternal, r.phone, ST[r.status]].map(v => v ?? ""));
+    const stamp = () => new Date().toISOString().slice(0, 10);
+    function save(blob, name) { const a = h("a", { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove(); }
     function csv() {
-      const q = v => `"${String(v ?? "").replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"`;
-      const lines = [["Fecha", "Nombre(s) jugadora", "Apellido paterno", "Apellido materno", "Edad", "Categoría", "Nombre(s) tutor", "Apellido paterno tutor", "Apellido materno tutor", "Teléfono", "Estado"].join(",")].concat(rows.map(r => [fmtDate(r.created_at), r.player_first || r.player_name, r.player_paternal, r.player_maternal, r.age, r.category, r.guardian_first || r.guardian, r.guardian_paternal, r.guardian_maternal, r.phone, ST[r.status]].map(q).join(",")));
-      const a = h("a", { href: URL.createObjectURL(new Blob(["﻿" + lines.join("\n")], { type: "text/csv" })), download: "solicitudes-academia.csv" }); a.click();
+      // Las celdas que empiezan con = + - @ se prefijan con ' para que Excel no las ejecute como fórmulas.
+      const q = v => `"${String(v).replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"`;
+      const lines = [HEAD, ...table()].map(r => r.map(q).join(","));
+      save(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), `solicitudes-academia-${stamp()}.csv`);
+    }
+    function xlsx() {
+      if (!window.XLSX) return toast("No se pudo cargar el exportador de Excel. Revisa tu conexión o usa CSV.", true);
+      // Todo se guarda como texto para conservar teléfonos y evitar que se interpreten fórmulas.
+      const data = [HEAD, ...table()].map(r => r.map(v => String(v)));
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = HEAD.map((t, i) => ({ wch: Math.min(32, Math.max(t.length, ...data.slice(1).map(r => r[i].length)) + 2) }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Solicitudes");
+      XLSX.writeFile(wb, `solicitudes-academia-${stamp()}.xlsx`);
     }
     function draw() {
-      root.replaceChildren(...[rows.length && canAdmin() ? h("div", { class: "bar" }, h("button", { class: "btn", onclick: csv }, "Exportar CSV")) : null,
+      root.replaceChildren(...[rows.length && canAdmin() ? h("div", { class: "bar" }, h("button", { class: "btn", onclick: xlsx }, "Exportar Excel (.xlsx)"), h("button", { class: "btn", onclick: csv }, "Exportar CSV"), h("span", { class: "help" }, `${rows.length} solicitud${rows.length === 1 ? "" : "es"}`)) : null,
         rows.length ? h("div", { class: "list" }, rows.map(r => h("div", { class: "row" },
           h("div", { class: "thumb" }, (r.player_name || "?").charAt(0)),
           h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, r.player_name, h("span", { class: "tag" }, `${r.age} años · ${r.category || "sin categoría"}`)),
