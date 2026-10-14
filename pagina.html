@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Academia Elite | Coronelas de Durango</title>
+  <meta name="theme-color" content="#0d0e12">
+  <link rel="icon" href="assets/escudo.webp" type="image/webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav" id="nav">
+    <div class="wrap nav__in">
+      <a class="brand" href="index.html" aria-label="Academia Elite Coronelas de Durango">
+        <span class="shield"><img src="assets/escudo.webp" alt="" width="40" height="48"></span>
+        <span class="brand__txt"><b>CORONELAS</b><small>Academia Elite</small></span>
+      </a>
+      <nav class="menu" id="menu" aria-label="Principal">
+        <a href="index.html#programa">Programa</a>
+        <a href="index.html#categorias">Categorías</a>
+        <a href="index.html#metodo">Método</a>
+        <a href="index.html#horarios">Horarios</a>
+        <a href="index.html#faq">Preguntas</a>
+        <a class="btn btn--gold btn--sm" href="index.html#inscripcion">Inscríbete</a>
+      </nav>
+      <button class="burger" id="burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span></button>
+    </div>
+    <div class="stripe"></div>
+  </header>
+
+  <main id="main">
+    <div class="page__hero" id="page-hero" hidden></div>
+    <article class="page">
+      <div class="wrap page__body">
+        <h1 id="page-title">Cargando…</h1>
+        <div class="rich" id="page-body"></div>
+        <p style="margin-top:40px"><a class="btn btn--ghost" href="index.html">← Volver al inicio</a></p>
+      </div>
+    </article>
+  </main>
+
+  <footer class="foot">
+    <div class="stripe"></div>
+    <div class="wrap foot__in">
+      <div class="foot__brand">
+        <span class="shield"><img src="assets/escudo.webp" alt="" width="56" height="67"></span>
+        <div><b>CORONELAS DE DURANGO</b><p>Academia Elite de voleibol</p></div>
+      </div>
+      <p class="foot__links" id="foot-links"><a href="index.html#programa">Programa</a><a href="index.html#categorias">Categorías</a><a href="index.html#horarios">Horarios</a><a href="index.html#inscripcion">Inscripción</a></p>
+      <div class="foot__extra"><p class="foot__contact" id="contact"></p><div class="social" id="social"></div></div>
+      <p class="copy">© <span id="y"></span> Coronelas de Durango. Todos los derechos reservados.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="js/data.js?v=2"></script>
+  <script src="script.js?v=2"></script>
+  <script src="js/site.js?v=2"></script>
+  <script>
+    (async () => {
+      const slug = new URLSearchParams(location.search).get("slug") || "";
+      const title = document.getElementById("page-title"), body = document.getElementById("page-body");
+      let page = null;
+      try { page = (await AcademiaData.list("pages", { where: { slug, status: "published" } }))[0]; } catch {}
+      if (!page) { title.textContent = "Página no encontrada"; body.textContent = "La página que buscas no existe o aún no se publica."; document.title = "No encontrada | Academia Elite"; return; }
+      document.title = page.title + " | Academia Elite";
+      title.textContent = page.title;
+      body.innerHTML = window.DOMPurify ? DOMPurify.sanitize(page.content || "", { ALLOWED_TAGS: ["p","br","h2","h3","h4","strong","em","u","s","ul","ol","li","blockquote","a","hr","img"], ALLOWED_ATTR: ["href","src","alt","target","rel"], ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|data:image\/)/i }) : "";
+      body.querySelectorAll("a").forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
+      if (page.hero_image_url) { const h = document.getElementById("page-hero"); h.style.backgroundImage = `url("${page.hero_image_url.replace(/"/g, "%22")}")`; h.hidden = false; }
+    })();
+  </script>
+</body>
+</html>
