@@ -61,6 +61,18 @@
   // ── Textos de portada ──
   if (general.hero_lead && $("#hero-lead")) $("#hero-lead").textContent = general.hero_lead;
   if (general.program_text && $("#program-text")) $("#program-text").textContent = general.program_text;
+  const txt = (id, v) => { const n = $(id); if (n && v) n.textContent = v; };
+  txt("#hero-eyebrow", general.hero_eyebrow);
+  txt("#form-text", general.form_text);
+  txt("#sched-text", general.sched_text);
+  if (Array.isArray(general.program_checks) && general.program_checks.length && $("#checks")) {
+    $("#checks").replaceChildren(...general.program_checks.map(t => el("li", "", t)));
+  }
+  if (Array.isArray(general.stats) && $("#stats")) {
+    const items = general.stats.filter(x => x && x.value && x.label);
+    $("#stats").replaceChildren(...items.map(x => { const li = el("li"); li.append(el("b", "", x.value), el("span", "", x.label)); return li; }));
+    $("#stats").hidden = !items.length;
+  }
   if (general.venue && $("#sede")) $("#sede").textContent = "Sede: " + general.venue + (general.address ? " · " + general.address : "");
 
   // ── Presentación de imágenes del hero ──

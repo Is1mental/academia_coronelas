@@ -172,24 +172,48 @@
     return root;
   };
 
+  const NL = String.fromCharCode(10);
+  const GENERAL_DEFAULTS = {
+    hero_eyebrow: "Cantera oficial · Voleibol",
+    hero_lead: "Aquí se forman las próximas Coronelas. Técnica, carácter y disciplina con el método del equipo profesional de Durango.",
+    program_text: "La Academia Elite es el semillero de Coronelas de Durango: un camino claro para que cada jugadora aprenda, compita y crezca con la camiseta de su ciudad.",
+    program_checks: ["Entrenadores certificados con experiencia en liga profesional", "Grupos por nivel y edad, con seguimiento individual", "Preparación física, técnica, táctica y mental", "Oportunidad de participar en torneos y exhibiciones con el club"],
+    stats: [{ value: "6", label: "Categorías" }, { value: "3", label: "Sesiones por semana" }, { value: "", label: "" }],
+    sched_text: "Confirma disponibilidad por categoría al solicitar tu clase de prueba.",
+    form_text: "Déjanos tus datos y te contactamos para agendar tu clase de prueba gratuita. Enviar este formulario no es una inscripción; las condiciones de inscripción y costos se te explican al contactarte."
+  };
+
   sections.general = () => {
     const root = h("div"); const d = {};
     D.getSetting("general", {}).then(g => {
       Object.assign(d, g);
+      for (const [k, v] of Object.entries(GENERAL_DEFAULTS)) if (d[k] == null || (Array.isArray(d[k]) && !d[k].length)) d[k] = JSON.parse(JSON.stringify(v));
+      while (d.stats.length < 3) d.stats.push({ value: "", label: "" });
       const ed = canEdit();
       const inp = (k, label, extra = {}, help) => f(label, h("input", { type: extra.type || "text", value: d[k] || "", disabled: !ed, maxlength: extra.max || 160, placeholder: extra.ph || "", oninput: e => (d[k] = e.target.value) }), help);
-      const area = (k, label, help) => f(label, h("textarea", { value: d[k] || "", disabled: !ed, maxlength: 600, oninput: e => (d[k] = e.target.value) }), help);
+      const area = (k, label, help, max = 600) => f(label, h("textarea", { value: d[k] || "", disabled: !ed, maxlength: max, oninput: e => (d[k] = e.target.value) }), help);
+      const checks = f("Puntos del programa", h("textarea", { value: d.program_checks.join(NL), disabled: !ed, maxlength: 800, style: "min-height:130px", oninput: e => (d.program_checks = e.target.value.split(NL).map(x => x.trim()).filter(Boolean).slice(0, 8)) }), "Uno por línea. Escribe solo lo que la academia pueda cumplir.");
       root.append(h("form", { class: "panel", onsubmit: async e => {
         e.preventDefault();
         if (d.email && !/^\S+@\S+\.\S+$/.test(d.email)) return toast("El correo no es válido.", true);
         try { await D.setSetting("general", { ...(await D.getSetting("general", {})), ...d }); toast("Información guardada."); } catch (x) { fail(x); }
       } },
-        h("h3", {}, "Textos de la portada"),
-        area("hero_lead", "Frase principal", "Aparece bajo el título “Academia Elite”. Vacío = texto por defecto."),
+        h("h3", {}, "Portada"),
+        inp("hero_eyebrow", "Etiqueta sobre el título", {}, "Ej. “Cantera oficial · Voleibol”. Escribe solo lo que sea cierto."),
+        area("hero_lead", "Frase principal", "Aparece bajo el título “Academia Elite”."),
+        h("p", { class: "help" }, "Cifras de la portada. Deja valor y texto vacíos para ocultar una cifra."),
+        h("div", { class: "grid g3" }, d.stats.slice(0, 3).map((st, i) => h("div", { style: "display:grid;gap:8px" },
+          f("Cifra " + (i + 1), h("input", { type: "text", value: st.value, maxlength: 8, disabled: !ed, oninput: e => (st.value = e.target.value.trim()) })),
+          f("Texto", h("input", { type: "text", value: st.label, maxlength: 40, disabled: !ed, oninput: e => (st.label = e.target.value.trim()) }))))),
+        h("h3", {}, "Programa"),
         area("program_text", "Descripción del programa"),
+        checks,
+        h("h3", {}, "Horarios y clase de prueba"),
+        area("sched_text", "Texto junto a los horarios"),
+        area("form_text", "Texto sobre el formulario de clase de prueba", "Aquí puedes indicar, por ejemplo, que la clase de prueba es gratuita.", 400),
         h("h3", {}, "Contacto y sede"),
         h("div", { class: "grid g2" },
-          inp("whatsapp", "WhatsApp de inscripciones", { ph: "526180000000" }, "Con lada de país, sin + ni espacios. Si lo llenas, la solicitud abre WhatsApp."),
+          inp("whatsapp", "WhatsApp de solicitudes", { ph: "526180000000" }, "Con lada de país, sin + ni espacios. Si lo llenas, la solicitud abre WhatsApp."),
           inp("phone", "Teléfono"), inp("email", "Correo", { type: "email" }), inp("venue", "Nombre de la sede")),
         inp("address", "Dirección", { max: 240 }),
         ed ? h("div", { class: "bar", style: "margin:0" }, h("button", { class: "btn btn--gold" }, "Guardar información")) : null));
