@@ -34,14 +34,14 @@ h3{font-size:2rem;line-height:1}
 
 /* estrella del escudo */
 .shield{position:relative;display:inline-block;line-height:0}
-.shield::before{content:"";position:absolute;left:50%;top:0;width:max(19%,12px);aspect-ratio:1;translate:-50% -78%;background:linear-gradient(#ffe066,#f5a20f);clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+.shield::before{content:"";position:absolute;left:50%;top:0;width:max(9%,8px);aspect-ratio:1;translate:-50% -185%;background:linear-gradient(#ffe066,#f5a20f);clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
 
 /* nav */
 .nav{position:sticky;top:0;z-index:50;background:rgba(13,14,18,.88);backdrop-filter:blur(12px)}
 .nav__in{display:flex;align-items:center;justify-content:space-between;height:66px}
 .brand{display:flex;align-items:center;gap:12px}
 .brand img{height:40px;width:auto}
-.brand .shield{margin-top:6px}
+.brand .shield{margin-top:12px}
 .brand__txt{display:flex;flex-direction:column;line-height:1}
 .brand b{font-size:1.6rem}.brand small{font:600 .68rem var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-top:3px}
 .menu{display:flex;align-items:center;gap:26px;font-weight:500;font-size:.92rem}
@@ -66,7 +66,7 @@ h3{font-size:2rem;line-height:1}
 .stats b{display:block;font-size:3rem;line-height:1;color:var(--gold)}
 .stats span{font-size:.8rem;color:var(--muted)}
 .hero__shield{display:grid;justify-items:center}
-.hero__shield .shield{width:min(100%,380px);margin-top:34px;filter:drop-shadow(0 20px 60px rgba(90,45,145,.6));animation:float 6s ease-in-out infinite}
+.hero__shield .shield{width:min(100%,380px);margin-top:70px;filter:drop-shadow(0 20px 60px rgba(90,45,145,.6));animation:float 6s ease-in-out infinite}
 .hero__shield img{width:100%}
 @keyframes float{50%{transform:translateY(-14px)}}
 .scroll{position:absolute;bottom:22px;left:50%;translate:-50% 0;color:var(--muted);font-size:1.4rem;animation:bob 2s infinite}
@@ -134,7 +134,7 @@ details p{color:var(--muted);margin-top:10px;max-width:60ch}
 .foot__in{padding:40px 0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:24px}
 .foot__brand{display:flex;gap:14px;align-items:center}
 .foot__brand img{height:56px;width:auto}
-.foot__brand .shield{margin-top:12px}
+.foot__brand .shield{margin-top:20px}
 .foot__brand b{font:600 1.5rem var(--display);letter-spacing:.03em}.foot__brand p{color:var(--muted);font-size:.85rem}
 .foot__links{display:flex;gap:22px;color:var(--muted);font-size:.9rem}.foot__links a:hover{color:var(--gold)}
 .copy{width:100%;color:var(--muted);font-size:.78rem;border-top:1px solid var(--line);padding-top:18px}
@@ -179,7 +179,7 @@ details p{color:var(--muted);margin-top:10px;max-width:60ch}
 
 @media(max-width:900px){
   .hero__in,.split,.join__in{grid-template-columns:1fr}
-  .hero__shield{order:-1;justify-items:start}.hero__shield .shield{width:130px;margin-top:22px}
+  .hero__shield{order:-1;justify-items:start}.hero__shield .shield{width:130px;margin-top:30px}
   .cards{grid-template-columns:1fr 1fr}
   .pillars{grid-template-columns:1fr 1fr}
   .burger{display:block}
