@@ -199,3 +199,5 @@ details p{color:var(--muted);margin-top:10px;max-width:60ch}
 }
 
 .hero h1,.brand b,.foot__brand b{font-family:var(--logo);font-weight:400;letter-spacing:.01em}
+
+.admin-link{color:inherit;text-decoration:underline;text-underline-offset:3px}.admin-link:hover{color:var(--gold)}
