@@ -538,7 +538,7 @@
     app.replaceChildren(...[
       D.auth.demo ? h("div", { class: "demo" }, "Modo demostración: los datos se guardan solo en este navegador. Conecta Supabase en config.js para publicarlos de verdad.") : null,
       h("header", { class: "top" }, h("div", { class: "top__in" },
-        h("div", { class: "top__brand" }, h("img", { src: "../assets/escudo.webp", alt: "" }), h("div", {}, h("p", {}, "Academia Elite"), h("h1", {}, "Administración"))),
+        h("a", { class: "top__brand", href: "../index.html", title: "Ir al sitio", "aria-label": "Ir al sitio de Academia Elite" }, h("img", { src: "../assets/escudo.webp", alt: "" }), h("div", {}, h("p", {}, "Academia Elite"), h("h1", {}, "Administración"))),
         h("div", { class: "top__act" }, S.user ? h("span", { class: "help" }, S.user.email) : null, h("a", { class: "btn btn--sm", href: "../index.html", target: "_blank", rel: "noopener" }, "Ver sitio"), h("button", { class: "btn btn--sm", onclick: async () => { await D.auth.signOut(); S.role = "none"; start(); } }, "Salir")))),
       h("div", { class: "stripe" }),
       h("div", { class: "shell" },
