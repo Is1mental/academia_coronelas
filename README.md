@@ -50,3 +50,10 @@ Cada solicitud nueva dispara la función `notify-enrollment`, que envía por la 
 3. Supabase → Edge Functions → crea `notify-enrollment` con `supabase/functions/notify-enrollment/index.ts` y **desactiva "Verify JWT"**.
 4. Edge Functions → Secrets: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `ADMIN_PHONE` (10 dígitos). Opcionales: `TPL_ADMIN`, `TPL_TUTOR`, `TPL_LANG`.
 5. SQL Editor: ejecuta `supabase/migracion-whatsapp.sql`.
+
+## Galerías, avisos y padres de familia
+
+- **Galerías:** álbumes de fotos y videos por grupo, entrenamiento o torneo. Los videos se suben como MP4/WebM (hasta 50 MB) o se pegan como enlace de YouTube/Vimeo. Cada galería tiene enlace directo `…/#album=ID`. Migración: `supabase/migracion-galerias.sql`.
+- **Avisos:** comunicados publicados en `avisos.html`. Un administrador o superadministrador activa o desactiva la sección (la base de datos también la oculta cuando está desactivada). Desde el panel se comparten por WhatsApp y correo (enlace `wa.me`/`mailto`, sin servicios de pago). Migración: `supabase/migracion-avisos.sql`.
+- **Padres de familia:** contactos (nombre, teléfono, correo, grupo) que solo ven los administradores; se pueden importar desde Excel/CSV. Los avisos también pueden enviarse a las solicitudes marcadas como Inscrita.
+- Orden de migraciones en el editor SQL de Supabase: `migracion-galerias.sql` y luego `migracion-avisos.sql`. El aviso por WhatsApp automático (`migracion-whatsapp.sql`) está en pausa y no es necesario.

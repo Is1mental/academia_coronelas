@@ -37,7 +37,7 @@
     ].map(([question, answer], i) => ({ question, answer, display_order: i, active: true }))
   };
 
-  const orderKey = { enrollments: "created_at", pages: "display_order" };
+  const orderKey = { enrollments: "created_at", pages: "display_order", contacts: "created_at", notices: "publish_date", albums: "created_at", media: "display_order" };
   const order = (rows, key, asc) => rows.sort((a, b) => {
     const x = a[key] ?? 0, y = b[key] ?? 0;
     return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
@@ -59,7 +59,7 @@
 
   async function save(table, row) {
     const now = new Date().toISOString();
-    if (table === "pages") row = { ...row, updated_at: now };
+    if (table === "pages" || table === "notices") row = { ...row, updated_at: now };
     if (remote) {
       const clean = { ...row };
       // Editar usa UPDATE (no upsert): el upsert también valida la política de INSERT y rechazaría, por ejemplo, cambiar el estado de una solicitud.

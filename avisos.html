@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Avisos | Academia Elite</title>
+  <meta name="theme-color" content="#0d0e12">
+  <link rel="icon" href="assets/escudo.webp" type="image/webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=14">
+</head>
+<body>
+  <header class="nav" id="nav">
+    <div class="wrap nav__in">
+      <a class="brand" href="index.html" aria-label="Academia Elite Coronelas de Durango">
+        <span class="shield"><img src="assets/escudo.webp" alt="" width="40" height="48"></span>
+        <span class="brand__txt"><b>CORONELAS</b><small>Academia Elite</small></span>
+      </a>
+      <nav class="menu" id="menu" aria-label="Principal">
+        <a href="index.html#programa">Programa</a>
+        <a href="index.html#categorias">Categorías</a>
+        <a href="index.html#metodo">Método</a>
+        <a href="index.html#horarios">Horarios</a>
+        <a href="index.html#faq">Preguntas</a>
+        <a class="btn btn--gold btn--sm" href="index.html#inscripcion">Clase de prueba</a>
+      </nav>
+      <button class="burger" id="burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span></button>
+    </div>
+    <div class="stripe"></div>
+  </header>
+
+  <main id="main">
+    <article class="page">
+      <div class="wrap page__body">
+        <p class="eyebrow"><span class="eyebrow__bar"></span>Comunicados</p>
+        <h1 id="n-title">Avisos</h1>
+        <p class="notice__meta" id="n-meta" hidden></p>
+        <div class="rich" id="n-body"></div>
+        <div class="notices" id="n-list"></div>
+        <p style="margin-top:40px"><a class="btn btn--ghost" id="n-back" href="index.html">← Volver al inicio</a></p>
+      </div>
+    </article>
+  </main>
+
+  <footer class="foot">
+    <div class="stripe"></div>
+    <div class="wrap foot__in">
+      <div class="foot__brand">
+        <span class="shield"><img src="assets/escudo.webp" alt="" width="56" height="67"></span>
+        <div><b>CORONELAS DE DURANGO</b><p>Academia Elite de voleibol</p></div>
+      </div>
+      <p class="foot__links" id="foot-links"><a href="index.html#programa">Programa</a><a href="index.html#categorias">Categorías</a><a href="index.html#horarios">Horarios</a><a href="index.html#inscripcion">Clase de prueba</a></p>
+      <div class="foot__extra"><p class="foot__contact" id="contact"></p><div class="social" id="social"></div></div>
+      <p class="copy">© <span id="y"></span> Coronelas de Durango. Todos los derechos reservados. · <a class="admin-link" href="admin/">Administración</a></p>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="js/data.js?v=14"></script>
+  <script src="script.js?v=14"></script>
+  <script src="js/site.js?v=14"></script>
+  <script>
+    (async () => {
+      const D = AcademiaData, $ = id => document.getElementById(id);
+      const title = $("n-title"), body = $("n-body"), list = $("n-list"), meta = $("n-meta"), back = $("n-back");
+      const day = d => (d ? new Date(d + "T12:00:00").toLocaleDateString("es-MX", { dateStyle: "long" }) : "");
+      const clean = html => window.DOMPurify ? DOMPurify.sanitize(html || "", { ALLOWED_TAGS: ["p","br","h2","h3","h4","strong","em","u","s","ul","ol","li","blockquote","a","hr","img"], ALLOWED_ATTR: ["href","src","alt","target","rel"], ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|data:image\/)/i }) : "";
+      const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+      const off = (t, m) => { title.textContent = t; body.textContent = m; document.title = t + " | Academia Elite"; };
+      let features = { notices: true }, rows = [];
+      try { features = await D.getSetting("features", { notices: true }); } catch {}
+      if (features.notices === false) return off("Avisos", "Esta sección no está disponible por el momento.");
+      try { rows = await D.list("notices", { where: { status: "published" }, orderBy: "publish_date", asc: false }); } catch {}
+      const id = new URLSearchParams(location.search).get("id");
+      if (id) {
+        const n = rows.find(x => x.id === id);
+        if (!n) { off("Aviso no encontrado", "El aviso que buscas no existe o ya no está disponible."); back.textContent = "← Ver todos los avisos"; back.href = "avisos.html"; return; }
+        document.title = n.title + " | Academia Elite";
+        title.textContent = n.title;
+        meta.textContent = [day(n.publish_date), n.audience].filter(Boolean).join(" · "); meta.hidden = false;
+        body.innerHTML = clean(n.content);
+        body.querySelectorAll("a").forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
+        back.textContent = "← Todos los avisos"; back.href = "avisos.html";
+        return;
+      }
+      document.title = "Avisos | Academia Elite";
+      if (!rows.length) return off("Avisos", "Por ahora no hay avisos publicados.");
+      rows.sort((a, b) => (b.pinned - a.pinned) || String(b.publish_date).localeCompare(String(a.publish_date)));
+      list.replaceChildren(...rows.map(n => {
+        const a = el("a", "notice" + (n.pinned ? " notice--pin" : "")); a.href = "avisos.html?id=" + encodeURIComponent(n.id);
+        const k = el("span", "notice__k", [n.pinned ? "Fijado" : "", day(n.publish_date), n.audience].filter(Boolean).join(" · "));
+        a.append(k, el("h2", "", n.title), el("p", "", n.summary || ""), el("span", "notice__more", "Leer aviso →"));
+        return a;
+      }));
+    })();
+  </script>
+</body>
+</html>

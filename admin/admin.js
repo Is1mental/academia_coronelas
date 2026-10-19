@@ -624,13 +624,235 @@
       h("button", { type: "button", class: "btn", style: "width:100%", onclick: async () => { await D.auth.signOut(); start(); } }, "Salir"))));
   }
 
-  const NAV = [["resumen", "Resumen"], ["general", "Información general"], ["redes", "Redes sociales"], ["imagenes", "Imágenes de portada"], ["categorias", "Categorías"], ["horarios", "Horarios"], ["entrenadores", "Entrenadores"], ["galeria", "Galerías"], ["paginas", "Páginas"], ["faq", "Preguntas frecuentes"], ["solicitudes", "Solicitudes"], ["cuentas", "Cuentas y permisos"]];
+  // ───────── Avisos y comunicados ─────────
+  // Teléfono mexicano de 10 dígitos → 52XXXXXXXXXX (formato de wa.me). Cadena vacía si no es utilizable.
+  const phoneMx = raw => { let d = String(raw || "").replace(/\D/g, ""); if (d.length === 10) d = "52" + d; else if (d.length === 13 && d.startsWith("521")) d = "52" + d.slice(3); return d.length === 12 && d.startsWith("52") ? d : ""; };
+  const siteLink = path => new URL("../" + path, location.href).href;
+  const copyText = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok); } catch { toast("No se pudo copiar; selecciona el texto manualmente.", true); } };
+  const dayEs = d => (d ? new Date(d + "T12:00:00").toLocaleDateString("es-MX", { dateStyle: "long" }) : "");
+
+  sections.avisos = () => {
+    const root = h("div"); let rows = [], editing = null, sending = null, features = { notices: true };
+    async function load() {
+      try { [rows, features] = await Promise.all([D.list("notices", { orderBy: "publish_date", asc: false }), D.getSetting("features", { notices: true })]); } catch (e) { fail(e); }
+      draw();
+    }
+
+    function featurePanel() {
+      const on = features.notices !== false;
+      return h("div", { class: "panel", style: "border-top-width:1px;gap:10px" },
+        h("div", { class: "bar", style: "margin:0" },
+          h("b", {}, "Sección pública de avisos:"), h("span", { class: "tag " + (on ? "tag--ok" : "") }, on ? "activada" : "desactivada"),
+          canAdmin() ? h("button", { class: "btn btn--sm", onclick: async () => {
+            if (on && !confirm("¿Desactivar la sección de avisos? Dejará de verse en el sitio, incluso para quien tenga el enlace.")) return;
+            try { await D.setSetting("features", { ...features, notices: !on }); toast(on ? "Sección desactivada." : "Sección activada."); } catch (e) { fail(e); }
+            load();
+          } }, on ? "Desactivar" : "Activar") : h("span", { class: "help" }, "Solo un administrador puede activarla o desactivarla.")),
+        h("p", { class: "help", style: "margin:0" }, on
+          ? "Los avisos publicados se ven en avisos.html y aparece el enlace “Avisos” en el menú del sitio."
+          : "Mientras esté desactivada nadie puede ver los avisos en el sitio. Puedes seguir creándolos y editándolos aquí."));
+    }
+
+    function form(row) {
+      const d = { ...row }; const rte = richEditor(d.content, false);
+      const err = h("p", { class: "help", style: "color:var(--red)" });
+      return h("form", { class: "panel", novalidate: true, onsubmit: async e => {
+        e.preventDefault();
+        d.content = rte.html(); d.title = (d.title || "").trim(); d.summary = (d.summary || "").trim(); d.audience = (d.audience || "").trim();
+        if (!d.title) return (err.textContent = "Falta el título.");
+        if (d.status === "published" && !d.content.replace(/<[^>]*>/g, "").trim() && !/<img/.test(d.content)) return (err.textContent = "Escribe el contenido antes de publicar.");
+        try { await D.save("notices", d); editing = null; toast(d.status === "published" ? "Aviso publicado." : "Borrador guardado."); load(); } catch (x) { err.textContent = x.message; }
+      } },
+        h("h3", {}, d.id ? "Editar aviso" : "Nuevo aviso"),
+        f("Título", h("input", { value: d.title || "", maxlength: 160, oninput: e => (d.title = e.target.value) })),
+        f("Resumen corto", h("textarea", { value: d.summary || "", maxlength: 300, oninput: e => (d.summary = e.target.value) }), "Aparece en la lista de avisos y en los mensajes de WhatsApp o correo."),
+        f("Contenido", rte.el),
+        h("div", { class: "grid g3" },
+          f("Dirigido a", h("input", { value: d.audience || "", maxlength: 80, placeholder: "Ej. Todos, Cadete, Juvenil", oninput: e => (d.audience = e.target.value) }), "Opcional. Si coincide con un grupo, se preselecciona al enviar."),
+          f("Fecha", h("input", { type: "date", value: d.publish_date || "", oninput: e => (d.publish_date = e.target.value) })),
+          f("Estado", h("select", { onchange: e => (d.status = e.target.value) }, h("option", { value: "draft", selected: d.status !== "published" }, "Borrador"), h("option", { value: "published", selected: d.status === "published" }, "Publicado")))),
+        check("Fijar arriba en la lista", !!d.pinned, e => (d.pinned = e.target.checked)),
+        err, h("div", { class: "bar", style: "margin:0" }, h("button", { class: "btn btn--gold" }, "Guardar"), h("button", { type: "button", class: "btn", onclick: () => { editing = null; draw(); } }, "Cancelar")));
+    }
+
+    // ── Envío a padres de familia ──
+    function sendView(n) {
+      const link = siteLink("avisos.html?id=" + encodeURIComponent(n.id));
+      const st = { msg: `Hola {nombre}, aviso de Academia Elite:\n*${n.title}*\n${n.summary ? n.summary + "\n" : ""}Léelo completo aquí: ${link}`, src: "all", group: "all" };
+      const sel = new Set(), done = new Set(); let people = [], ready = false;
+      const wrap = h("div");
+      const msgFor = p => st.msg.replaceAll("{nombre}", p && p.name ? p.name : "familia");
+      const visible = () => people.filter(p => (st.src === "all" || p.src === st.src) && (st.group === "all" || p.group === st.group));
+      const chosen = () => visible().filter(p => sel.has(p.id));
+      const pick = () => { sel.clear(); visible().forEach(p => sel.add(p.id)); };
+
+      (async () => {
+        let enr = [], con = [];
+        try { enr = await D.list("enrollments"); } catch {}
+        try { con = canAdmin() ? await D.list("contacts") : []; } catch {}
+        const seen = new Set();
+        con.filter(c => c.active !== false).forEach(c => { const ph = phoneMx(c.phone); people.push({ id: "c" + c.id, name: c.parent_name, player: c.player_name, phone: ph, email: (c.email || "").trim(), group: c.group_name || "", src: "Contactos" }); if (ph) seen.add(ph); });
+        enr.filter(x => x.status === "enrolled").forEach(x => { const ph = phoneMx(x.phone); if (ph && seen.has(ph)) return; people.push({ id: "e" + x.id, name: x.guardian_first || x.guardian, player: x.player_name, phone: ph, email: "", group: x.category || "", src: "Inscritas" }); });
+        const g = people.map(p => p.group).find(x => x && n.audience && x.toLowerCase() === n.audience.trim().toLowerCase());
+        if (g) st.group = g;
+        pick(); ready = true; draw();
+      })();
+
+      function draw() {
+        const groups = [...new Set(people.map(p => p.group).filter(Boolean))].sort();
+        const vis = visible(), ch = chosen();
+        const emails = [...new Set(ch.map(p => p.email).filter(Boolean))];
+        const bcc = () => {
+          const body = msgFor(null).replace(/^Hola familia, (\w)/, (_, c) => c.toUpperCase());
+          const href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent("Aviso: " + n.title)}&body=${encodeURIComponent(body)}`;
+          if (href.length > 1900) return null;
+          return href;
+        };
+        const mailHref = bcc();
+        wrap.replaceChildren(
+          h("div", { class: "bar" }, h("button", { class: "btn", onclick: () => { sending = null; draw0(); } }, "← Volver a avisos")),
+          h("div", { class: "panel", style: "border-top-width:1px;gap:12px" },
+            h("h3", {}, "Enviar: " + n.title),
+            n.status !== "published" ? h("div", { class: "notice" }, "Este aviso está en borrador: el enlace no abrirá hasta que lo publiques.") : null,
+            features.notices === false ? h("div", { class: "notice" }, "La sección de avisos está desactivada: el enlace mostrará “no disponible” hasta que se active.") : null,
+            f("Mensaje", h("textarea", { rows: 6, value: st.msg, maxlength: 1000, oninput: e => (st.msg = e.target.value) }), "{nombre} se reemplaza por el nombre del padre o tutor. Edítalo como quieras."),
+            h("div", { class: "bar", style: "margin:0" },
+              h("button", { class: "btn", onclick: () => copyText(link, "Enlace copiado.") }, "Copiar enlace"),
+              h("button", { class: "btn", onclick: () => copyText(msgFor(null), "Mensaje copiado.") }, "Copiar mensaje"),
+              h("a", { class: "btn btn--gold", href: "https://wa.me/?text=" + encodeURIComponent(msgFor(null)), target: "_blank", rel: "noopener" }, "Compartir por WhatsApp"),
+              h("span", { class: "help" }, "Para un chat o grupo: WhatsApp te deja elegir el destino."))),
+          h("div", { class: "panel", style: "border-top-width:1px;gap:12px" },
+            h("h3", {}, "Enviar a cada padre de familia"),
+            !ready ? h("p", { class: "help" }, "Cargando destinatarios…") : !people.length ? h("p", { class: "empty" }, canAdmin() ? "Aún no hay destinatarios. Agrega padres en “Padres de familia” o marca solicitudes como Inscrita." : "Aún no hay destinatarios. Marca solicitudes como Inscrita; la lista de contactos solo la ve un administrador.") : [
+              h("div", { class: "bar", style: "margin:0" },
+                h("select", { class: "inp", style: "width:auto", "aria-label": "Origen", onchange: e => { st.src = e.target.value; pick(); draw(); } },
+                  [["all", "Todos los orígenes"], ["Inscritas", "Solicitudes inscritas"], ["Contactos", "Lista de contactos"]].map(([v, l]) => h("option", { value: v, selected: st.src === v }, l))),
+                h("select", { class: "inp", style: "width:auto", "aria-label": "Grupo", onchange: e => { st.group = e.target.value; pick(); draw(); } },
+                  h("option", { value: "all" }, "Todos los grupos"), groups.map(g => h("option", { value: g, selected: st.group === g }, g))),
+                h("label", { class: "f f--check" }, h("input", { type: "checkbox", checked: vis.length > 0 && ch.length === vis.length, onchange: e => { vis.forEach(p => (e.target.checked ? sel.add(p.id) : sel.delete(p.id))); draw(); } }), "Seleccionar todos")),
+              h("div", { class: "bar", style: "margin:0" },
+                mailHref ? h("a", { class: "btn", href: mailHref }, `Correo a ${emails.length} (CCO)`) : h("button", { class: "btn", disabled: !emails.length, onclick: () => copyText(emails.join(", "), "Correos copiados. Pégalos en el campo CCO de tu correo.") }, emails.length ? "Copiar correos (son muchos para abrir el correo)" : "Sin correos en la selección"),
+                emails.length && mailHref ? h("button", { class: "btn", onclick: () => copyText(emails.join(", "), "Correos copiados.") }, "Copiar correos") : null,
+                h("span", { class: "help" }, `${ch.length} seleccionado${ch.length === 1 ? "" : "s"} de ${vis.length}. Los correos se envían con copia oculta.`)),
+              vis.length ? h("div", { class: "list" }, vis.map(p => h("div", { class: "row row--sel" },
+                h("input", { type: "checkbox", checked: sel.has(p.id), "aria-label": "Seleccionar " + p.name, style: "width:18px;height:18px;accent-color:var(--gold)", onchange: e => { e.target.checked ? sel.add(p.id) : sel.delete(p.id); draw(); } }),
+                h("div", { class: "thumb" }, (p.name || "?").charAt(0).toUpperCase()),
+                h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, p.name, p.group ? h("span", { class: "tag" }, p.group) : null, done.has(p.id) ? h("span", { class: "tag tag--ok" }, "WhatsApp abierto") : null),
+                  h("div", { class: "row__s" }, [p.player ? "Jugadora: " + p.player : "", p.phone ? "+" + p.phone : "sin teléfono válido", p.email || "sin correo"].filter(Boolean).join(" · "))),
+                h("div", { class: "row__a" },
+                  p.phone ? h("a", { class: "btn btn--sm", href: `https://wa.me/${p.phone}?text=${encodeURIComponent(msgFor(p))}`, target: "_blank", rel: "noopener", onclick: () => { done.add(p.id); setTimeout(draw, 50); } }, "WhatsApp") : null,
+                  p.email ? h("a", { class: "btn btn--sm", href: `mailto:${p.email}?subject=${encodeURIComponent("Aviso: " + n.title)}&body=${encodeURIComponent(msgFor(p))}` }, "Correo") : null)))) : h("p", { class: "empty" }, "Nadie coincide con ese filtro.")]));
+      }
+      draw();
+      return wrap;
+    }
+
+    function draw0() { draw(); }
+    function draw() {
+      root.replaceChildren();
+      if (editing) return root.append(form(editing));
+      if (sending) return root.append(sendView(sending));
+      root.append(featurePanel());
+      if (canEdit()) root.append(h("div", { class: "bar" }, h("button", { class: "btn btn--gold", onclick: () => { editing = { title: "", summary: "", content: "", audience: "", status: "draft", pinned: false, publish_date: new Date().toISOString().slice(0, 10) }; draw(); } }, "+ Nuevo aviso")));
+      if (!rows.length) return root.append(h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay avisos. Crea uno para publicar comunicados o informes a los padres de familia.")));
+      root.append(h("div", { class: "list" }, rows.map(r => h("div", { class: "row" },
+        h("div", { class: "thumb" }, "📢"),
+        h("div", { style: "min-width:0" },
+          h("div", { class: "row__t" }, r.title, h("span", { class: "tag " + (r.status === "published" ? "tag--ok" : "") }, r.status === "published" ? "publicado" : "borrador"), r.pinned ? h("span", { class: "tag tag--gold" }, "fijado") : null, r.audience ? h("span", { class: "tag" }, r.audience) : null),
+          h("div", { class: "row__s" }, [dayEs(r.publish_date), r.summary].filter(Boolean).join(" · "))),
+        h("div", { class: "row__a" },
+          r.status === "published" ? h("a", { class: "btn btn--sm", href: "../avisos.html?id=" + encodeURIComponent(r.id), target: "_blank", rel: "noopener" }, "Ver") : null,
+          canEdit() ? h("button", { class: "btn btn--sm btn--gold", onclick: () => { sending = r; draw(); } }, "Enviar") : null,
+          canEdit() ? h("button", { class: "btn btn--sm", onclick: () => { editing = r; draw(); } }, "Editar") : null,
+          canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm(`¿Eliminar el aviso "${r.title}"?`)) return; try { await D.remove("notices", r.id); toast("Aviso eliminado."); } catch (e) { fail(e); } load(); } }, "Eliminar") : null)))));
+    }
+    load();
+    return root;
+  };
+
+  // ───────── Padres de familia (contactos para avisos) ─────────
+  sections.contactos = () => {
+    const root = h("div");
+    if (!canAdmin()) return h("div", { class: "notice" }, "Solo los administradores pueden ver la lista de padres de familia.");
+    let rows = [], editing = null, q = "", grp = "all";
+    const file = h("input", { type: "file", accept: ".xlsx,.xls,.csv", class: "hidden" });
+    async function load() { try { rows = (await D.list("contacts")).sort((a, b) => a.parent_name.localeCompare(b.parent_name, "es")); } catch (e) { fail(e); } draw(); }
+
+    const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+    const COLS = { parent_name: ["padre", "tutor", "padre o tutor", "madre", "responsable", "nombre"], player_name: ["jugadora", "alumna", "hija", "deportista"], phone: ["telefono", "celular", "tel", "whatsapp", "movil"], email: ["correo", "email", "e-mail", "correo electronico"], group_name: ["grupo", "categoria"] };
+    file.addEventListener("change", async () => {
+      const fl = file.files[0]; if (!fl) return;
+      try {
+        if (!window.XLSX) throw new Error("No se pudo cargar el lector de Excel. Revisa tu conexión.");
+        const wb = XLSX.read(await fl.arrayBuffer(), { type: "array" });
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+        if (data.length < 2) throw new Error("El archivo no tiene filas.");
+        const head = data[0].map(norm), idx = {};
+        for (const [k, names] of Object.entries(COLS)) idx[k] = head.findIndex(x => names.includes(x));
+        if (idx.parent_name < 0) throw new Error("No encontré la columna “Padre o tutor”. Usa los encabezados: Padre o tutor, Jugadora, Teléfono, Correo, Grupo.");
+        const items = data.slice(1).map(r => ({ parent_name: String(r[idx.parent_name] || "").trim().slice(0, 120), player_name: idx.player_name < 0 ? "" : String(r[idx.player_name] || "").trim().slice(0, 120), phone: idx.phone < 0 ? "" : String(r[idx.phone] || "").trim().slice(0, 30), email: idx.email < 0 ? "" : String(r[idx.email] || "").trim().slice(0, 160), group_name: idx.group_name < 0 ? "" : String(r[idx.group_name] || "").trim().slice(0, 80), active: true })).filter(r => r.parent_name).slice(0, 500);
+        if (!items.length) throw new Error("No hay filas con nombre de padre o tutor.");
+        if (!confirm(`Se importarán ${items.length} contacto${items.length === 1 ? "" : "s"}. ¿Continuar?`)) return;
+        toast("Importando…");
+        for (const it of items) await D.save("contacts", it);
+        toast(`${items.length} contactos importados.`);
+      } catch (e) { fail(e); } finally { file.value = ""; load(); }
+    });
+
+    function form(row) {
+      const d = { ...row }; const err = h("p", { class: "help", style: "color:var(--red)" });
+      return h("form", { class: "panel", novalidate: true, onsubmit: async e => {
+        e.preventDefault();
+        if (!(d.parent_name || "").trim()) return (err.textContent = "Falta el nombre del padre o tutor.");
+        if (d.email && !/^\S+@\S+\.\S+$/.test(d.email.trim())) return (err.textContent = "El correo no es válido.");
+        if (d.phone && !phoneMx(d.phone)) return (err.textContent = "El teléfono debe tener 10 dígitos (lada + número).");
+        try { await D.save("contacts", { ...d, parent_name: d.parent_name.trim(), email: (d.email || "").trim() }); editing = null; toast("Contacto guardado."); load(); } catch (x) { err.textContent = x.message; }
+      } },
+        h("h3", {}, d.id ? "Editar contacto" : "Nuevo contacto"),
+        h("div", { class: "grid g2" },
+          f("Padre, madre o tutor", h("input", { value: d.parent_name || "", maxlength: 120, oninput: e => (d.parent_name = e.target.value) })),
+          f("Jugadora", h("input", { value: d.player_name || "", maxlength: 120, oninput: e => (d.player_name = e.target.value) })),
+          f("Teléfono (WhatsApp)", h("input", { type: "tel", value: d.phone || "", maxlength: 30, placeholder: "10 dígitos", oninput: e => (d.phone = e.target.value) })),
+          f("Correo", h("input", { type: "email", value: d.email || "", maxlength: 160, oninput: e => (d.email = e.target.value) })),
+          f("Grupo o categoría", h("input", { value: d.group_name || "", maxlength: 80, placeholder: "Ej. Cadete", oninput: e => (d.group_name = e.target.value) }))),
+        check("Recibe avisos", d.active !== false, e => (d.active = e.target.checked)),
+        err, h("div", { class: "bar", style: "margin:0" }, h("button", { class: "btn btn--gold" }, "Guardar"), h("button", { type: "button", class: "btn", onclick: () => { editing = null; draw(); } }, "Cancelar")));
+    }
+
+    function draw() {
+      root.replaceChildren();
+      if (editing) return root.append(form(editing));
+      const groups = [...new Set(rows.map(r => r.group_name).filter(Boolean))].sort();
+      const shown = rows.filter(r => (grp === "all" || r.group_name === grp) && (!q || norm([r.parent_name, r.player_name, r.phone, r.email].join(" ")).includes(norm(q))));
+      root.append(h("div", { class: "bar" },
+        h("button", { class: "btn btn--gold", onclick: () => { editing = { parent_name: "", player_name: "", phone: "", email: "", group_name: "", active: true }; draw(); } }, "+ Agregar contacto"),
+        h("button", { class: "btn", onclick: () => file.click() }, "Importar Excel/CSV"), file,
+        h("span", { class: "help" }, "Columnas: Padre o tutor, Jugadora, Teléfono, Correo, Grupo.")),
+        rows.length ? h("div", { class: "bar" },
+          h("input", { class: "inp", type: "search", value: q, placeholder: "Buscar…", style: "max-width:260px", oninput: e => { q = e.target.value; const pos = e.target.selectionStart; draw(); const i = root.querySelector("input[type=search]"); if (i) { i.focus(); i.setSelectionRange(pos, pos); } } }),
+          h("select", { class: "inp", style: "width:auto", "aria-label": "Grupo", onchange: e => { grp = e.target.value; draw(); } }, h("option", { value: "all" }, "Todos los grupos"), groups.map(g => h("option", { value: g, selected: grp === g }, g))),
+          h("span", { class: "help" }, `${shown.length} de ${rows.length}`)) : null,
+        rows.length ? h("div", { class: "list" }, shown.length ? shown.map(r => h("div", { class: "row" },
+          h("div", { class: "thumb" }, (r.parent_name || "?").charAt(0).toUpperCase()),
+          h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, r.parent_name, r.group_name ? h("span", { class: "tag" }, r.group_name) : null, r.active === false ? h("span", { class: "tag" }, "sin avisos") : null),
+            h("div", { class: "row__s" }, [r.player_name ? "Jugadora: " + r.player_name : "", r.phone, r.email].filter(Boolean).join(" · ") || "Sin datos de contacto")),
+          h("div", { class: "row__a" },
+            h("button", { class: "btn btn--sm", onclick: () => { editing = r; draw(); } }, "Editar"),
+            h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm(`¿Eliminar a ${r.parent_name}?`)) return; try { await D.remove("contacts", r.id); toast("Contacto eliminado."); } catch (e) { fail(e); } load(); } }, "Eliminar")))) : h("p", { class: "empty" }, "Nadie coincide con la búsqueda."))
+          : h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay contactos. Agrégalos uno por uno o impórtalos desde Excel. También puedes enviar avisos a las solicitudes marcadas como Inscrita.")));
+    }
+    load();
+    return root;
+  };
+
+  const NAV = [["resumen", "Resumen"], ["general", "Información general"], ["redes", "Redes sociales"], ["imagenes", "Imágenes de portada"], ["categorias", "Categorías"], ["horarios", "Horarios"], ["entrenadores", "Entrenadores"], ["galeria", "Galerías"], ["paginas", "Páginas"], ["faq", "Preguntas frecuentes"], ["avisos", "Avisos"], ["solicitudes", "Solicitudes"], ["contactos", "Padres de familia"], ["cuentas", "Cuentas y permisos"]];
 
   // ───────── estructura ─────────
   function go(tab) { S.tab = tab; shell(); }
 
   function shell() {
-    const nav = NAV.filter(([k]) => k !== "cuentas" || isSuper());
+    const nav = NAV.filter(([k]) => (k !== "cuentas" || isSuper()) && (k !== "contactos" || canAdmin()));
+    if (S.tab === "contactos" && !canAdmin()) S.tab = "resumen";
     if (S.tab === "cuentas" && !isSuper()) S.tab = "resumen";
     const title = (NAV.find(n => n[0] === S.tab) || NAV[0])[1];
     const note = S.role === "pending" ? "Tu cuenta está pendiente de aprobación. El superadministrador debe asignarte un permiso para ver el contenido interno."

@@ -11,9 +11,11 @@
     : "";
   const safe = async (fn, d) => { try { return await fn(); } catch { return d; } };
 
-  const [general, home, categories, schedules, faqs, coaches, albums, media, pages] = await Promise.all([
+  const [general, home, features, notices, categories, schedules, faqs, coaches, albums, media, pages] = await Promise.all([
     safe(() => D.getSetting("general", {}), {}),
     safe(() => D.getSetting("home", {}), {}),
+    safe(() => D.getSetting("features", { notices: true }), { notices: true }),
+    safe(() => D.list("notices", { where: { status: "published" } }), []),
     safe(() => D.list("categories", { where: { active: true } }), []),
     safe(() => D.list("schedules", { where: { active: true } }), []),
     safe(() => D.list("faqs", { where: { active: true } }), []),
@@ -36,6 +38,13 @@
   if (links) pages.filter(p => p.show_in_footer).forEach(p => {
     const a = el("a", "", p.title); a.href = `pagina.html?slug=${encodeURIComponent(p.slug)}`; links.append(a);
   });
+
+  // ── Avisos: enlace en menú y pie solo si la sección está activada y hay avisos publicados ──
+  if (features.notices !== false && notices.length) {
+    const mk = () => { const a = el("a", "", "Avisos"); a.href = "avisos.html"; return a; };
+    if (menu) menu.insertBefore(mk(), $(".btn", menu));
+    if (links) links.append(mk());
+  }
 
   // ── Contacto y redes (pie) ──
   const contact = $("#contact");
@@ -194,7 +203,7 @@
 
   // ── Formulario de inscripción ──
   const form = $("#form"), msg = $("#msg");
-  form.addEventListener("submit", async e => {
+  if (form) form.addEventListener("submit", async e => {
     e.preventDefault();
     let ok = true;
     form.querySelectorAll("input,select").forEach(f => { const bad = !f.hasAttribute("data-optional") && !f.value.trim(); f.classList.toggle("invalid", bad); if (bad) ok = false; });
