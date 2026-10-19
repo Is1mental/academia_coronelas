@@ -38,3 +38,15 @@ Requiere una Edge Function (una sola vez):
 1. Aplicar `supabase/schema.sql` (o, si ya estaba aplicado, `supabase/migracion-cuentas.sql`).
 2. Supabase → Edge Functions → *Deploy a new function* → nombre `admin-users` → pegar `supabase/functions/admin-users/index.ts` → Deploy.
 La clave de servicio la inyecta Supabase en la función; nunca va en el navegador ni en este repositorio.
+
+## Aviso por WhatsApp de solicitudes nuevas
+
+Cada solicitud nueva dispara la función `notify-enrollment`, que envía por la API oficial de WhatsApp (Meta) un aviso al administrador y una confirmación al tutor.
+
+1. Meta Business: crea la app, agrega un número y obtén el **token permanente** y el **Phone number ID**.
+2. Crea y envía a aprobación dos plantillas (categoría *Utilidad*, idioma `es_MX`):
+   - `solicitud_nueva_admin` con 5 variables: `{{1}}` jugadora, `{{2}}` edad, `{{3}}` categoría, `{{4}}` tutor, `{{5}}` teléfono.
+   - `solicitud_recibida` con 2 variables: `{{1}}` tutor, `{{2}}` jugadora.
+3. Supabase → Edge Functions → crea `notify-enrollment` con `supabase/functions/notify-enrollment/index.ts` y **desactiva "Verify JWT"**.
+4. Edge Functions → Secrets: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `ADMIN_PHONE` (10 dígitos). Opcionales: `TPL_ADMIN`, `TPL_TUTOR`, `TPL_LANG`.
+5. SQL Editor: ejecuta `supabase/migracion-whatsapp.sql`.
