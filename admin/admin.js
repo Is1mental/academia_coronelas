@@ -35,6 +35,31 @@
   const canAdmin = () => ["super_admin", "admin"].includes(S.role);
   const isSuper = () => S.role === "super_admin";
 
+  // ───────── tema claro / oscuro (el mismo que usa el sitio público) ─────────
+  const THEME_ICON = {
+    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+  };
+  const themeMq = matchMedia("(prefers-color-scheme: light)");
+  const themeNow = () => document.documentElement.dataset.theme || (themeMq.matches ? "light" : "dark");
+  function themeButton() {
+    const b = h("button", { class: "theme", type: "button" });
+    const paint = () => {
+      const t = themeNow(), meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = t === "light" ? "#f7f5f0" : "#0d0e12";
+      b.innerHTML = t === "light" ? THEME_ICON.moon : THEME_ICON.sun;
+      b.setAttribute("aria-label", t === "light" ? "Cambiar a tema oscuro" : "Cambiar a tema claro"); b.title = b.getAttribute("aria-label");
+    };
+    b.addEventListener("click", () => {
+      const next = themeNow() === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("academia:theme", next); } catch {}
+      paint();
+    });
+    paint();
+    return b;
+  }
+
   // ───────── campos ─────────
   const f = (label, input, help) => h("label", { class: "f" }, label, input, help ? h("span", { class: "help" }, help) : null);
   const check = (label, checked, onchange) => h("label", { class: "f f--check" }, h("input", { type: "checkbox", checked, onchange }), label);
@@ -861,7 +886,7 @@
       D.auth.demo ? h("div", { class: "demo" }, "Modo demostración: los datos se guardan solo en este navegador. Conecta Supabase en config.js para publicarlos de verdad.") : null,
       h("header", { class: "top" }, h("div", { class: "top__in" },
         h("a", { class: "top__brand", href: "../index.html", title: "Ir al sitio", "aria-label": "Ir al sitio de Academia Elite" }, h("img", { src: "../assets/escudo.webp", alt: "" }), h("div", {}, h("p", {}, "Academia Elite"), h("h1", {}, "Administración"))),
-        h("div", { class: "top__act" }, S.user ? h("span", { class: "help" }, S.user.email) : null, h("a", { class: "btn btn--sm", href: "../index.html", target: "_blank", rel: "noopener" }, "Ver sitio"), h("button", { class: "btn btn--sm", onclick: async () => { await D.auth.signOut(); S.role = "none"; start(); } }, "Salir")))),
+        h("div", { class: "top__act" }, themeButton(), S.user ? h("span", { class: "help" }, S.user.email) : null, h("a", { class: "btn btn--sm", href: "../index.html", target: "_blank", rel: "noopener" }, "Ver sitio"), h("button", { class: "btn btn--sm", onclick: async () => { await D.auth.signOut(); S.role = "none"; start(); } }, "Salir")))),
       h("div", { class: "stripe" }),
       h("div", { class: "shell" },
         h("nav", { class: "side", "aria-label": "Secciones" }, nav.map(([k, l]) => h("button", { "aria-current": S.tab === k ? "true" : "false", onclick: () => go(k) }, l))),
