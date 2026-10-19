@@ -119,3 +119,11 @@ label.f{display:grid;gap:5px;font-size:.75rem;font-weight:600;letter-spacing:.06
 }
 
 .login__brand b{font-family:var(--logo);font-weight:400;letter-spacing:.01em}
+
+.req{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+.req:last-child{border:0}
+.req__h{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.req__n{font-size:1.05rem;overflow-wrap:anywhere;min-width:0;flex:1 1 180px}
+.req__d{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 16px;margin:0}
+.req__d dt{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.req__d dd{margin:0;overflow-wrap:anywhere}

@@ -404,15 +404,21 @@
         h("div", { class: "bar", style: "margin:0" },
           h("button", { class: "btn btn--gold", onclick: xlsx }, "Exportar Excel (.xlsx)"), h("button", { class: "btn", onclick: csv }, "Exportar CSV"),
           h("span", { class: "help" }, `Se exportarán: ${what}. ${sel.size ? "" : "Marca casillas para elegir solo algunas."}`))) : null,
-        rows.length ? h("div", { class: "list" }, list.length ? list.map(r => h("div", { class: "row row--sel" },
-          canAdmin() ? h("input", { type: "checkbox", checked: sel.has(r.id), "aria-label": "Seleccionar " + r.player_name, style: "width:18px;height:18px;accent-color:var(--gold)", onchange: e => { e.target.checked ? sel.add(r.id) : sel.delete(r.id); draw(); } }) : h("span"),
-          h("div", { class: "thumb" }, (r.player_name || "?").charAt(0)),
-          h("div", { style: "min-width:0" }, h("div", { class: "row__t" }, r.player_name, h("span", { class: "tag" }, `${r.age} años · ${r.category || "sin categoría"}`)),
-            h("div", { class: "row__s" }, `Tutor: ${r.guardian} · `, h("a", { href: "tel:" + String(r.phone).replace(/[^\d+]/g, "") }, r.phone), ` · ${fmtDate(r.created_at)}`)),
-          h("div", { class: "row__a" },
+        rows.length ? h("div", { class: "list" }, list.length ? list.map(r => h("div", { class: "req" },
+          h("div", { class: "req__h" },
+            canAdmin() ? h("input", { type: "checkbox", checked: sel.has(r.id), "aria-label": "Seleccionar " + r.player_name, style: "width:18px;height:18px;accent-color:var(--gold);flex:none", onchange: e => { e.target.checked ? sel.add(r.id) : sel.delete(r.id); draw(); } }) : null,
+            h("b", { class: "req__n" }, r.player_name), h("span", { class: "tag" }, ST[r.status] || r.status)),
+          h("dl", { class: "req__d" },
+            h("div", {}, h("dt", {}, "Edad"), h("dd", {}, r.age ? `${r.age} años` : "—")),
+            h("div", {}, h("dt", {}, "Categoría"), h("dd", {}, r.category || "Sin categoría")),
+            h("div", {}, h("dt", {}, "Tutor"), h("dd", {}, r.guardian || "—")),
+            h("div", {}, h("dt", {}, "Teléfono"), h("dd", {}, h("a", { href: "tel:" + String(r.phone).replace(/[^\d+]/g, "") }, r.phone))),
+            h("div", {}, h("dt", {}, "Recibida"), h("dd", {}, fmtDate(r.created_at)))),
+          h("div", { class: "row__a", style: "justify-content:flex-start" },
             h("select", { class: "inp", style: "width:auto", disabled: !canEdit(), "aria-label": "Estado", onchange: async e => { try { await D.save("enrollments", { ...r, status: e.target.value }); toast("Estado actualizado."); } catch (x) { fail(x); } load(); } },
               Object.entries(ST).map(([v, l]) => h("option", { value: v, selected: r.status === v }, l))),
-            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar esta solicitud?")) return; try { await D.remove("enrollments", r.id); } catch (x) { fail(x); } load(); } }, "Eliminar") : null))) : h("p", { class: "empty" }, "Ninguna solicitud con ese estado."))
+            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar esta solicitud?")) return; try { await D.remove("enrollments", r.id); } catch (x) { fail(x); } load(); } }, "Eliminar") : null)))
+          : h("p", { class: "empty" }, "Ninguna solicitud con ese estado."))
           : h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay solicitudes de clase de prueba."))].filter(Boolean));
     }
     load();
