@@ -157,9 +157,9 @@
   sections.resumen = () => {
     const root = h("div");
     (async () => {
-      const [cat, coa, pho, pag, enr] = await Promise.all(["categories", "coaches", "photos", "pages", "enrollments"].map(t => D.list(t).catch(() => [])));
+      const [cat, coa, pho, pag, enr] = await Promise.all(["categories", "coaches", "albums", "pages", "enrollments"].map(t => D.list(t).catch(() => [])));
       root.append(h("div", { class: "stats" },
-        [[enr.filter(e => e.status === "new").length, "Solicitudes nuevas"], [cat.length, "Categorías"], [coa.length, "Entrenadores"], [pho.length, "Fotografías"], [pag.length, "Páginas"]]
+        [[enr.filter(e => e.status === "new").length, "Solicitudes nuevas"], [cat.length, "Categorías"], [coa.length, "Entrenadores"], [pho.length, "Galerías"], [pag.length, "Páginas"]]
           .map(([n, l]) => h("div", { class: "stat" }, h("b", {}, String(n)), h("span", {}, l)))));
       if (canEdit() && !cat.length) root.append(h("div", { class: "panel", style: "margin-top:20px" }, h("h3", {}, "Empieza rápido"), h("p", { class: "help" }, "Carga las categorías, horarios y preguntas de ejemplo para editarlos en lugar de escribir todo desde cero."),
         h("div", { class: "bar", style: "margin:0" }, h("button", { class: "btn btn--gold", onclick: async e => { e.target.disabled = true; try { await D.seedExamples(); toast("Contenido de ejemplo cargado."); go("resumen"); } catch (x) { fail(x); } } }, "Cargar contenido de ejemplo"))));
@@ -288,34 +288,128 @@
     title: r => r.question, sub: r => r.answer
   });
 
+  // ───────── Galerías: álbumes de fotos y videos (entrenamientos por grupo, torneos, eventos) ─────────
+  const KINDS = { entrenamiento: "Entrenamiento", torneo: "Torneo", evento: "Evento", otro: "Otro" };
+  const fmtDay = d => (d ? new Date(d + "T12:00:00").toLocaleDateString("es-MX", { dateStyle: "long" }) : "");
+
   sections.galeria = () => {
-    const root = h("div"); let rows = [];
-    const ed = canEdit();
-    const input = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", multiple: true, class: "hidden" });
-    async function load() { try { rows = await D.list("photos"); } catch (e) { fail(e); } draw(); }
-    async function upd(r, patch, msg) { try { await D.save("photos", { ...r, ...patch }); if (msg) toast(msg); } catch (e) { fail(e); } load(); }
-    function draw() {
-      root.replaceChildren(...[
-        ed ? h("div", { class: "bar" }, h("button", { class: "btn btn--gold", onclick: () => input.click() }, "+ Subir fotografías"), h("span", { class: "help" }, "Puedes elegir varias a la vez."), input) : null,
-        rows.length ? h("div", { class: "photos" }, rows.map((r, i) => h("div", { class: "ph" + (r.active === false ? " off" : "") }, h("img", { src: r.url, alt: r.caption || "", loading: "lazy" }),
-          h("div", { class: "ph__b" },
-            h("input", { class: "inp", value: r.caption || "", maxlength: 200, placeholder: "Pie de foto", disabled: !ed, onchange: e => upd(r, { caption: e.target.value.trim() }, "Pie de foto guardado.") }),
-            ed ? h("div", { class: "ph__a" },
-              h("button", { class: "btn btn--sm btn--icon", disabled: i === 0, onclick: async () => { const p = rows[i - 1]; await D.save("photos", { ...p, display_order: i }); await D.save("photos", { ...r, display_order: i - 1 }); load(); } }, "←"),
-              h("button", { class: "btn btn--sm btn--icon", disabled: i === rows.length - 1, onclick: async () => { const n = rows[i + 1]; await D.save("photos", { ...n, display_order: i }); await D.save("photos", { ...r, display_order: i + 1 }); load(); } }, "→"),
-              h("button", { class: "btn btn--sm", onclick: () => upd(r, { active: r.active === false }) }, r.active === false ? "Mostrar" : "Ocultar"),
-              canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar esta fotografía?")) return; try { await D.remove("photos", r.id); toast("Eliminada."); } catch (e) { fail(e); } load(); } }, "Eliminar") : null) : null))))
-          : h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay fotografías. Cuando subas la primera aparecerá la sección “Galería” en el sitio."))].filter(Boolean));
-    }
-    input.addEventListener("change", async () => {
+    const root = h("div"); const ed = canEdit();
+    let albums = [], counts = {}, current = null, media = [], editing = null;
+
+    async function loadList() {
       try {
-        toast("Subiendo fotografías…");
-        let n = rows.length;
-        for (const file of input.files) { const url = await D.uploadImage(file, "galeria"); await D.save("photos", { url, caption: "", album: "", display_order: n++, active: true }); }
-        toast("Fotografías agregadas.");
-      } catch (e) { fail(e); } finally { input.value = ""; load(); }
-    });
-    load();
+        const [a, m] = await Promise.all([D.list("albums", { orderBy: "created_at", asc: false }), D.list("media")]);
+        albums = a.sort((x, y) => String(y.event_date || y.created_at).localeCompare(String(x.event_date || x.created_at)));
+        counts = {}; m.forEach(x => (counts[x.album_id] = (counts[x.album_id] || 0) + 1));
+        for (const al of albums) al._cover = al.cover_url || (m.find(x => x.album_id === al.id && x.kind === "photo") || {}).url || "";
+      } catch (e) { fail(e); }
+      drawList();
+    }
+    async function loadAlbum() { try { media = await D.list("media", { where: { album_id: current.id } }); } catch (e) { fail(e); } drawAlbum(); }
+
+    // ── Lista de álbumes ──
+    function drawList() {
+      if (editing) return root.replaceChildren(albumForm(editing));
+      root.replaceChildren(...[
+        ed ? h("div", { class: "bar" }, h("button", { class: "btn btn--gold", onclick: () => { editing = { title: "", kind: "entrenamiento", group_name: "", event_date: "", description: "", active: true }; drawList(); } }, "+ Nueva galería"),
+          h("span", { class: "help" }, "Crea una galería por grupo, entrenamiento o torneo y súbele fotos y videos.")) : null,
+        albums.length ? h("div", { class: "list" }, albums.map(a => h("div", { class: "row" },
+          a._cover ? h("img", { class: "thumb", src: a._cover, alt: "", loading: "lazy" }) : h("div", { class: "thumb" }, "—"),
+          h("div", { style: "min-width:0" },
+            h("div", { class: "row__t" }, a.title, h("span", { class: "tag tag--gold" }, KINDS[a.kind] || a.kind), a.active === false ? h("span", { class: "tag" }, "oculta") : null),
+            h("div", { class: "row__s" }, [a.group_name, fmtDay(a.event_date), `${counts[a.id] || 0} archivo${counts[a.id] === 1 ? "" : "s"}`].filter(Boolean).join(" · "))),
+          h("div", { class: "row__a" },
+            h("button", { class: "btn btn--sm", onclick: () => { current = a; media = []; drawAlbum(); loadAlbum(); } }, ed ? "Administrar" : "Ver"),
+            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm(`¿Eliminar la galería "${a.title}" y todas sus fotos y videos? No se puede deshacer.`)) return; try { await D.remove("albums", a.id); toast("Galería eliminada."); } catch (e) { fail(e); } loadList(); } }, "Eliminar") : null))))
+          : h("div", { class: "list" }, h("p", { class: "empty" }, "Aún no hay galerías. Crea la primera; aparecerá la sección “Galería” en el sitio cuando tenga fotos o videos."))].filter(Boolean));
+    }
+
+    // ── Datos del álbum ──
+    function albumForm(row) {
+      const d = { ...row };
+      const err = h("p", { class: "help", style: "color:var(--red)" });
+      const save = h("button", { class: "btn btn--gold", type: "submit" }, "Guardar");
+      return h("form", { class: "panel", novalidate: true, onsubmit: async e => {
+        e.preventDefault();
+        if (!String(d.title || "").trim()) { err.textContent = "Falta el título."; return; }
+        save.disabled = true;
+        try {
+          const out = { ...d, title: d.title.trim(), event_date: d.event_date || null, group_name: (d.group_name || "").trim(), description: (d.description || "").trim() };
+          delete out._cover;
+          const saved = await D.save("albums", out); toast("Galería guardada.");
+          editing = null;
+          if (!d.id) { current = saved; media = []; drawAlbum(); loadAlbum(); }
+          else if (current) { current = { ...current, ...saved }; drawAlbum(); }
+          else loadList();
+        } catch (x) { err.textContent = x.message; save.disabled = false; }
+      } },
+        h("h3", {}, d.id ? "Datos de la galería" : "Nueva galería"),
+        h("div", { class: "grid g2" },
+          f("Título", h("input", { value: d.title || "", maxlength: 120, placeholder: "Ej. Torneo Estatal Sub-18", oninput: e => (d.title = e.target.value) })),
+          f("Tipo", h("select", { onchange: e => (d.kind = e.target.value) }, Object.entries(KINDS).map(([v, l]) => h("option", { value: v, selected: d.kind === v }, l)))),
+          f("Grupo o categoría", h("input", { value: d.group_name || "", maxlength: 80, placeholder: "Ej. Cadete, Juvenil (opcional)", oninput: e => (d.group_name = e.target.value) })),
+          f("Fecha", h("input", { type: "date", value: d.event_date || "", oninput: e => (d.event_date = e.target.value) }))),
+        f("Descripción", h("textarea", { value: d.description || "", maxlength: 600, oninput: e => (d.description = e.target.value) }), "Opcional. Se muestra al abrir la galería."),
+        check("Visible en el sitio", d.active !== false, e => (d.active = e.target.checked)),
+        err, h("div", { class: "bar", style: "margin:0" }, save, h("button", { class: "btn", type: "button", onclick: () => { editing = null; current ? drawAlbum() : drawList(); } }, "Cancelar")));
+    }
+
+    // ── Contenido del álbum ──
+    const photoIn = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", multiple: true, class: "hidden" });
+    const videoIn = h("input", { type: "file", accept: "video/mp4,video/webm", class: "hidden" });
+    const linkIn = h("input", { class: "inp", type: "url", placeholder: "Enlace de YouTube o Vimeo", maxlength: 300, style: "min-width:220px;flex:1" });
+    async function addMedia(rows) { let n = media.length; for (const r of rows) await D.save("media", { album_id: current.id, caption: "", display_order: n++, active: true, ...r }); }
+    async function busy(msg, fn, ok) { try { toast(msg); await fn(); toast(ok); } catch (e) { fail(e); } finally { photoIn.value = ""; videoIn.value = ""; loadAlbum(); } }
+    photoIn.addEventListener("change", () => busy("Subiendo fotografías…", async () => { const rows = []; for (const fl of photoIn.files) rows.push({ kind: "photo", url: await D.uploadImage(fl, "galerias") }); await addMedia(rows); }, "Fotografías agregadas."));
+    videoIn.addEventListener("change", () => busy("Subiendo video… puede tardar", async () => { const fl = videoIn.files[0]; if (fl) await addMedia([{ kind: "video", url: await D.uploadVideo(fl, "videos") }]); }, "Video agregado."));
+    function addLink() {
+      const url = linkIn.value.trim();
+      if (!D.embedInfo(url)) return toast("Solo se aceptan enlaces de YouTube o Vimeo (https://…).", true);
+      busy("Agregando video…", async () => { await addMedia([{ kind: "embed", url }]); linkIn.value = ""; }, "Video agregado.");
+    }
+    async function upd(r, patch, msg) { try { await D.save("media", { ...r, ...patch }); if (msg) toast(msg); } catch (e) { fail(e); } loadAlbum(); }
+    async function swap(i, j) { const a = media[i], b = media[j]; try { await D.save("media", { ...a, display_order: j }); await D.save("media", { ...b, display_order: i }); } catch (e) { fail(e); } loadAlbum(); }
+
+    function tile(r, i) {
+      const info = r.kind === "embed" ? D.embedInfo(r.url) : null;
+      const view = r.kind === "photo" ? h("img", { src: r.url, alt: r.caption || "", loading: "lazy" })
+        : r.kind === "video" ? h("video", { src: r.url + "#t=0.1", preload: "metadata", muted: true, playsinline: true, controls: true })
+        : info && info.thumb ? h("img", { src: info.thumb, alt: "", loading: "lazy" }) : h("div", { class: "ph0" }, "Video de Vimeo");
+      return h("div", { class: "ph" + (r.active === false ? " off" : "") }, view,
+        h("div", { class: "ph__b" },
+          r.kind !== "photo" ? h("span", { class: "tag" }, r.kind === "video" ? "▶ video" : "▶ " + (info ? info.provider : "enlace")) : null,
+          h("input", { class: "inp", value: r.caption || "", maxlength: 200, placeholder: "Pie (opcional)", disabled: !ed, onchange: e => upd(r, { caption: e.target.value.trim() }, "Pie guardado.") }),
+          ed ? h("div", { class: "ph__a" },
+            h("button", { class: "btn btn--sm btn--icon", disabled: i === 0, onclick: () => swap(i, i - 1) }, "←"),
+            h("button", { class: "btn btn--sm btn--icon", disabled: i === media.length - 1, onclick: () => swap(i, i + 1) }, "→"),
+            r.kind === "photo" ? h("button", { class: "btn btn--sm", disabled: current.cover_url === r.url, onclick: async () => { try { await D.save("albums", { ...current, cover_url: r.url }); current = { ...current, cover_url: r.url }; toast("Portada actualizada."); } catch (e) { fail(e); } drawAlbum(); } }, current.cover_url === r.url ? "Portada" : "Hacer portada") : null,
+            h("button", { class: "btn btn--sm", onclick: () => upd(r, { active: r.active === false }) }, r.active === false ? "Mostrar" : "Ocultar"),
+            canAdmin() ? h("button", { class: "btn btn--sm btn--danger", onclick: async () => { if (!confirm("¿Eliminar este archivo?")) return; try { await D.remove("media", r.id); toast("Eliminado."); } catch (e) { fail(e); } loadAlbum(); } }, "Eliminar") : null) : null));
+    }
+
+    function drawAlbum() {
+      if (editing) return root.replaceChildren(albumForm(editing));
+      const a = current;
+      root.replaceChildren(...[
+        h("div", { class: "bar" },
+          h("button", { class: "btn", onclick: () => { current = null; loadList(); } }, "← Todas las galerías"),
+          ed ? h("button", { class: "btn", onclick: () => { editing = { ...a }; drawAlbum(); } }, "Editar datos") : null),
+        h("div", { class: "panel", style: "border-top-width:1px" },
+          h("h3", {}, a.title, " ", h("span", { class: "tag tag--gold" }, KINDS[a.kind] || a.kind), a.active === false ? h("span", { class: "tag" }, "oculta") : null),
+          h("p", { class: "help" }, [a.group_name, fmtDay(a.event_date)].filter(Boolean).join(" · ") || "Sin grupo ni fecha"),
+          a.description ? h("p", {}, a.description) : null),
+        ed ? h("div", { class: "panel", style: "border-top-width:1px;gap:12px" },
+          h("div", { class: "bar", style: "margin:0" },
+            h("button", { class: "btn btn--gold", onclick: () => photoIn.click() }, "+ Subir fotografías"),
+            h("button", { class: "btn", onclick: () => videoIn.click() }, "+ Subir video"),
+            h("span", { class: "help" }, "Fotos: varias a la vez. Video: MP4 o WebM de hasta 50 MB."), photoIn, videoIn),
+          h("div", { class: "bar", style: "margin:0;flex-wrap:nowrap" }, linkIn, h("button", { class: "btn", style: "white-space:nowrap", onclick: addLink }, "+ Agregar enlace")),
+          h("span", { class: "help" }, "Para videos largos o pesados, súbelos a YouTube como “no listado” y pega aquí el enlace; se verán dentro de la galería.")) : null,
+        media.length ? h("div", { class: "photos" }, media.map(tile))
+          : h("div", { class: "list" }, h("p", { class: "empty" }, "Esta galería aún no tiene fotos ni videos."))].filter(Boolean));
+    }
+
+    loadList();
     return root;
   };
 
@@ -530,7 +624,7 @@
       h("button", { type: "button", class: "btn", style: "width:100%", onclick: async () => { await D.auth.signOut(); start(); } }, "Salir"))));
   }
 
-  const NAV = [["resumen", "Resumen"], ["general", "Información general"], ["redes", "Redes sociales"], ["imagenes", "Imágenes de portada"], ["categorias", "Categorías"], ["horarios", "Horarios"], ["entrenadores", "Entrenadores"], ["galeria", "Galería de fotos"], ["paginas", "Páginas"], ["faq", "Preguntas frecuentes"], ["solicitudes", "Solicitudes"], ["cuentas", "Cuentas y permisos"]];
+  const NAV = [["resumen", "Resumen"], ["general", "Información general"], ["redes", "Redes sociales"], ["imagenes", "Imágenes de portada"], ["categorias", "Categorías"], ["horarios", "Horarios"], ["entrenadores", "Entrenadores"], ["galeria", "Galerías"], ["paginas", "Páginas"], ["faq", "Preguntas frecuentes"], ["solicitudes", "Solicitudes"], ["cuentas", "Cuentas y permisos"]];
 
   // ───────── estructura ─────────
   function go(tab) { S.tab = tab; shell(); }

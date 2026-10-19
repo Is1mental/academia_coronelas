@@ -11,14 +11,15 @@
     : "";
   const safe = async (fn, d) => { try { return await fn(); } catch { return d; } };
 
-  const [general, home, categories, schedules, faqs, coaches, photos, pages] = await Promise.all([
+  const [general, home, categories, schedules, faqs, coaches, albums, media, pages] = await Promise.all([
     safe(() => D.getSetting("general", {}), {}),
     safe(() => D.getSetting("home", {}), {}),
     safe(() => D.list("categories", { where: { active: true } }), []),
     safe(() => D.list("schedules", { where: { active: true } }), []),
     safe(() => D.list("faqs", { where: { active: true } }), []),
     safe(() => D.list("coaches", { where: { active: true } }), []),
-    safe(() => D.list("photos", { where: { active: true } }), []),
+    safe(() => D.list("albums", { where: { active: true } }), []),
+    safe(() => D.list("media", { where: { active: true } }), []),
     safe(() => D.list("pages", { where: { status: "published" } }), [])
   ]);
 
@@ -121,14 +122,74 @@
     $("#entrenadores").hidden = false;
   }
 
-  // ── Galería ──
-  if (photos.length) {
-    $("#gallery").replaceChildren(...photos.map(p => {
-      const f = el("figure"); const i = el("img"); i.src = p.url; i.alt = p.caption || "Fotografía de la academia"; i.loading = "lazy"; f.append(i);
-      if (p.caption) f.append(el("figcaption", "", p.caption));
-      return f;
-    }));
-    $("#galeria").hidden = false;
+  // ── Galerías (álbumes de fotos y videos) ──
+  const KINDS = { entrenamiento: "Entrenamientos", torneo: "Torneos", evento: "Eventos", otro: "Otros" };
+  const KIND1 = { entrenamiento: "Entrenamiento", torneo: "Torneo", evento: "Evento", otro: "Galería" };
+  const byAlbum = {};
+  media.forEach(m => { if (m.kind === "embed" ? D.embedInfo(m.url) : safeUrl(m.url) || /^data:(image|video)\//.test(m.url || "")) (byAlbum[m.album_id] = byAlbum[m.album_id] || []).push(m); });
+  Object.values(byAlbum).forEach(l => l.sort((a, b) => a.display_order - b.display_order));
+  const shownAlbums = albums.filter(a => byAlbum[a.id]).sort((a, b) => String(b.event_date || b.created_at).localeCompare(String(a.event_date || a.created_at)));
+  const day = d => (d ? new Date(d + "T12:00:00").toLocaleDateString("es-MX", { dateStyle: "long" }) : "");
+  const thumbOf = a => {
+    if (a.cover_url && (safeUrl(a.cover_url) || /^data:image\//.test(a.cover_url))) return a.cover_url;
+    const l = byAlbum[a.id], p = l.find(m => m.kind === "photo"); if (p) return p.url;
+    const v = l.map(m => m.kind === "embed" && D.embedInfo(m.url)).find(i => i && i.thumb); return v ? v.thumb : "";
+  };
+
+  if (shownAlbums.length) {
+    const box = $("#albums"), fil = $("#gal-filters"); let kind = "all";
+    const viewer = $("#viewer"); let cur = null, idx = 0;
+    const drawAlbums = () => {
+      box.replaceChildren(...shownAlbums.filter(a => kind === "all" || a.kind === kind).map(a => {
+        const c = el("button", "album"); c.type = "button"; c.setAttribute("aria-label", `Abrir galería ${a.title}`);
+        const t = thumbOf(a);
+        if (t) { const i = el("img"); i.src = t; i.alt = ""; i.loading = "lazy"; c.append(i); } else c.append(el("div", "album__ph", "▶"));
+        const n = byAlbum[a.id].length, vids = byAlbum[a.id].filter(m => m.kind !== "photo").length;
+        const b = el("div", "album__b");
+        b.append(el("span", "album__k", KIND1[a.kind] || "Galería"), el("h3", "", a.title),
+          el("p", "", [a.group_name, day(a.event_date)].filter(Boolean).join(" · ") || " "),
+          el("small", "", `${n} archivo${n === 1 ? "" : "s"}${vids ? ` · ${vids} video${vids === 1 ? "" : "s"}` : ""}`));
+        c.append(b); c.addEventListener("click", () => open(a, 0)); return c;
+      }));
+    };
+    const kinds = [...new Set(shownAlbums.map(a => a.kind))];
+    if (kinds.length > 1) {
+      fil.replaceChildren(...[["all", "Todas"], ...kinds.map(k => [k, KINDS[k] || k])].map(([k, l]) => {
+        const b = el("button", "chip" + (k === "all" ? " on" : ""), l); b.type = "button";
+        b.addEventListener("click", () => { kind = k; fil.querySelectorAll(".chip").forEach(x => x.classList.toggle("on", x === b)); drawAlbums(); }); return b;
+      }));
+    } else fil.hidden = true;
+
+    const stage = $("#v-media");
+    function show() {
+      const m = byAlbum[cur.id][idx]; stage.replaceChildren();
+      if (m.kind === "photo") { const i = el("img"); i.src = m.url; i.alt = m.caption || cur.title; stage.append(i); }
+      else if (m.kind === "video") { const v = el("video"); v.src = m.url; v.controls = true; v.playsInline = true; v.preload = "metadata"; stage.append(v); }
+      else { const info = D.embedInfo(m.url); const f = el("iframe"); f.src = info.src; f.title = m.caption || cur.title; f.allow = "accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen"; f.allowFullscreen = true; f.referrerPolicy = "strict-origin-when-cross-origin"; stage.append(f); }
+      $("#v-cap").textContent = m.caption || ""; $("#v-count").textContent = `${idx + 1} / ${byAlbum[cur.id].length}`;
+      const one = byAlbum[cur.id].length < 2; $("#v-prev").hidden = one; $("#v-next").hidden = one;
+    }
+    function open(a, i) {
+      cur = a; idx = i;
+      $("#v-title").textContent = a.title; $("#v-meta").textContent = [KIND1[a.kind], a.group_name, day(a.event_date)].filter(Boolean).join(" · ");
+      $("#v-desc").textContent = a.description || ""; $("#v-desc").hidden = !a.description;
+      show(); if (!viewer.open) viewer.showModal();
+      try { history.replaceState(null, "", "#album=" + a.id); } catch {}
+    }
+    const step = d => { const n = byAlbum[cur.id].length; idx = (idx + d + n) % n; show(); };
+    const close = () => { stage.replaceChildren(); try { history.replaceState(null, "", location.pathname + location.search + "#galeria"); } catch {} };
+    $("#v-close").addEventListener("click", () => viewer.close());
+    $("#v-prev").addEventListener("click", () => step(-1)); $("#v-next").addEventListener("click", () => step(1));
+    viewer.addEventListener("close", close);
+    viewer.addEventListener("click", e => { if (e.target === viewer) viewer.close(); });
+    viewer.addEventListener("keydown", e => { if (e.key === "ArrowLeft") step(-1); else if (e.key === "ArrowRight") step(1); });
+    drawAlbums(); $("#galeria").hidden = false;
+    // Enlace directo a una galería: …/#album=ID
+    const m = location.hash.match(/^#album=([0-9a-f-]{36})$/i);
+    if (m) { const a = shownAlbums.find(x => x.id === m[1]); if (a) { open(a, 0); } }
+    // Acceso en el menú
+    const menuEl = $("#menu");
+    if (menuEl) { const cta = $(".btn", menuEl), a = el("a", "", "Galería"); a.href = "#galeria"; menuEl.insertBefore(a, cta); }
   }
 
   // ── Formulario de inscripción ──

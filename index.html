@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
   <a class="skip" href="#main">Saltar al contenido</a>
@@ -145,7 +145,8 @@
           <p class="eyebrow"><span class="eyebrow__bar"></span>Galería</p>
           <h2>Vive la <span class="grad">academia</span></h2>
         </div>
-        <div class="gallery" id="gallery"></div>
+        <div class="gfilters" id="gal-filters" role="group" aria-label="Filtrar galerías"></div>
+        <div class="albums" id="albums"></div>
       </div>
     </section>
 
@@ -224,6 +225,12 @@
       </div>
     </section>
   </main>
+  <dialog id="viewer" class="viewer" aria-label="Galería">
+    <div class="viewer__top"><div><b id="v-title"></b><small id="v-meta"></small></div><button type="button" id="v-close" aria-label="Cerrar">✕</button></div>
+    <p id="v-desc" class="viewer__desc"></p>
+    <div class="viewer__stage"><button type="button" id="v-prev" aria-label="Anterior">‹</button><div id="v-media"></div><button type="button" id="v-next" aria-label="Siguiente">›</button></div>
+    <div class="viewer__foot"><span id="v-cap"></span><span id="v-count"></span></div>
+  </dialog>
 
   <footer class="foot">
     <div class="stripe"></div>
@@ -241,8 +248,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
-  <script src="js/data.js?v=3"></script>
-  <script src="script.js?v=3"></script>
-  <script src="js/site.js?v=3"></script>
+  <script src="js/data.js?v=13"></script>
+  <script src="script.js?v=13"></script>
+  <script src="js/site.js?v=13"></script>
 </body>
 </html>

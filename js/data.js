@@ -124,6 +124,29 @@
     return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
   }
 
+
+  // Videos: archivo mp4/webm (hasta 50 MB, límite del plan gratuito de Supabase) o enlace de YouTube/Vimeo.
+  async function uploadVideo(file, folder = "videos") {
+    if (!remote) throw new Error("Subir videos requiere Supabase conectado. En modo demostración usa un enlace de YouTube o Vimeo.");
+    const ext = file && file.type === "video/mp4" ? "mp4" : file && file.type === "video/webm" ? "webm" : "";
+    if (!ext) throw new Error("Formato no permitido. Usa MP4 o WebM, o pega un enlace de YouTube/Vimeo.");
+    if (file.size > 50 * 1024 * 1024) throw new Error("El video pesa más de 50 MB. Súbelo a YouTube (como “no listado”) y pega el enlace.");
+    const path = `${folder}/${uid()}.${ext}`;
+    const { error } = await sb.storage.from("media").upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+    fail(error, "No se pudo subir el video. Revisa tus permisos.");
+    return sb.storage.from("media").getPublicUrl(path).data.publicUrl;
+  }
+
+  // Reconoce enlaces de YouTube y Vimeo y devuelve la dirección para incrustar (solo estos dos servicios).
+  function embedInfo(url) {
+    const u = String(url || "").trim();
+    let m = u.match(/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})(?:[?&#].*)?$/i);
+    if (m) return { provider: "youtube", id: m[1], src: `https://www.youtube-nocookie.com/embed/${m[1]}`, thumb: `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` };
+    m = u.match(/^https?:\/\/(?:www\.)?vimeo\.com\/(?:video\/)?(\d{6,12})(?:[/?#].*)?$/i);
+    if (m) return { provider: "vimeo", id: m[1], src: `https://player.vimeo.com/video/${m[1]}`, thumb: "" };
+    return null;
+  }
+
   // ── Autenticación ──
   const auth = {
     demo: !remote,
@@ -200,5 +223,5 @@
     }
   }
 
-  window.AcademiaData = { remote, list, save, remove, getSetting, setSetting, submitEnrollment, uploadImage, auth, seedExamples };
+  window.AcademiaData = { remote, list, save, remove, getSetting, setSetting, submitEnrollment, uploadImage, uploadVideo, embedInfo, auth, seedExamples };
 })();
