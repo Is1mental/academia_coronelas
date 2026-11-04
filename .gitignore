@@ -2,3 +2,6 @@
 .DS_Store
 Thumbs.db
 node_modules/
+
+# Documentos de entrega internos (no se publican)
+entrega/
